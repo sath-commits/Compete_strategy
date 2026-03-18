@@ -8,7 +8,7 @@ RAPIDAPI_KEY = os.getenv('RAPIDAPI_KEY')
 RAPIDAPI_HOST = os.getenv('RAPIDAPI_HOST', 'jsearch.p.rapidapi.com')
 
 
-def fetch_jobs(company, num_pages=10):
+def fetch_jobs(company, num_pages=3):
     """
     Fetch job postings for a company from JSearch via RapidAPI.
 
