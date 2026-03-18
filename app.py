@@ -5,6 +5,7 @@ import os
 import threading
 import uuid
 import functools
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, render_template, request, jsonify, Response
 from core.job_fetcher import fetch_jobs
@@ -106,10 +107,19 @@ def _run_analysis_job(job_id: str, company: str, ip: str):
             return
 
         save_jobs(structured_jobs)
-        add_jobs_to_index(structured_jobs)
 
-        insights = generate_insights(company, structured_jobs)
-        trends = compute_trends(company, structured_jobs)
+        # Embeddings are only needed for /chat — run them in the background
+        # so they don't block insights/trends from completing.
+        threading.Thread(
+            target=add_jobs_to_index, args=(structured_jobs,), daemon=True
+        ).start()
+
+        # Insights and trends are independent — run them in parallel.
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            f_insights = ex.submit(generate_insights, company, structured_jobs)
+            f_trends = ex.submit(compute_trends, company, structured_jobs)
+            insights = f_insights.result()
+            trends = f_trends.result()
 
         log_search(company, ip, from_cache=False, success=True)
 
