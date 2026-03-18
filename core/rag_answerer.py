@@ -2,6 +2,7 @@ from openai import OpenAI
 import os
 from dotenv import load_dotenv
 from core.embeddings import search_jobs
+from db.db import get_cached_jobs
 
 load_dotenv()
 
@@ -27,9 +28,37 @@ Structure your answers using these sections where relevant:
 **Evidence** — job titles used as references (listed at the end)"""
 
 
+def _jobs_from_sqlite(company, n=8):
+    """
+    Fallback when embeddings index isn't ready yet.
+    Pulls structured jobs from SQLite and formats them like search_jobs() output.
+    """
+    raw = get_cached_jobs(company) if company else []
+    if not raw:
+        return []
+    return [
+        {
+            'title': j.get('title', ''),
+            'company': j.get('company', company),
+            'seniority': j.get('seniority', ''),
+            'domain_tags': j.get('domain_tags', []),
+            'skills': j.get('skills', []),
+            'responsibilities': j.get('responsibilities', []),
+            'job_url': j.get('job_url', ''),
+            'relevance': 1.0
+        }
+        for j in raw[:n]
+    ]
+
+
 def answer_question(question, company, history):
     """Retrieve relevant jobs via RAG and generate a structured answer."""
     relevant_jobs = search_jobs(question, company=company if company else None, n_results=8)
+
+    # Embeddings may still be building in the background — fall back to SQLite
+    if not relevant_jobs and company:
+        print(f"[rag_answerer] Embeddings not ready for '{company}', falling back to SQLite")
+        relevant_jobs = _jobs_from_sqlite(company)
 
     if not relevant_jobs:
         return {
