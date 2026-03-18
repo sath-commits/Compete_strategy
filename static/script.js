@@ -286,8 +286,7 @@ async function pollStatus(jobId, company) {
 }
 
 function scrollToChat() {
-  el('chat-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  setTimeout(() => el('chat-input').focus(), 400);
+  el('chat-input').focus();
 }
 
 function finishAnalysis(company, data) {

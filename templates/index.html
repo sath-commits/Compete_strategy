@@ -469,6 +469,19 @@
       </div>
     </div>
 
+    <!-- ── Chat (above charts) ── -->
+    <div id="chat-section" class="hidden" style="margin-bottom:24px">
+      <h2 class="chat-heading">Ask a strategic question</h2>
+      <p class="chat-sub">Ask about hiring patterns, product strategy, or what this company's moves mean for your business.</p>
+      <div class="chat-window" id="chat-window"></div>
+      <div class="chat-input-row">
+        <i class="bi bi-chat-dots" style="color:#AAAAAA;flex-shrink:0"></i>
+        <input id="chat-input" class="chat-input" type="text"
+          placeholder="e.g. How is this company approaching mobile growth? What should it mean for my company?" />
+        <button class="btn-send" onclick="sendChat()">Send <i class="bi bi-arrow-right"></i></button>
+      </div>
+    </div>
+
     <div class="results-grid">
       <div>
         <div class="card">
@@ -489,30 +502,7 @@
         <div class="card" style="min-height:300px">
           <div class="card-title">Strategic Insights</div>
           <div id="insights-list"></div>
-          <div class="chat-cta-bar">
-            <p>Have a specific question? Ask the AI analyst.</p>
-            <button class="btn-chat-cta" onclick="scrollToChat()">
-              <i class="bi bi-chat-dots"></i> Ask a question
-            </button>
-          </div>
         </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ── Chat ── -->
-<section id="chat-section" class="hidden">
-  <div class="container">
-    <div style="max-width:800px;margin:0 auto">
-      <h2 class="chat-heading">Ask a strategic question</h2>
-      <p class="chat-sub">Ask about hiring patterns, product strategy, or what this company's moves mean for your business.</p>
-      <div class="chat-window" id="chat-window"></div>
-      <div class="chat-input-row">
-        <i class="bi bi-chat-dots" style="color:#AAAAAA;flex-shrink:0"></i>
-        <input id="chat-input" class="chat-input" type="text"
-          placeholder="e.g. How is this company approaching mobile growth? What should it mean for my company?" />
-        <button class="btn-send" onclick="sendChat()">Send <i class="bi bi-arrow-right"></i></button>
       </div>
     </div>
   </div>
