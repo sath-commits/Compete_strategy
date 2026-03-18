@@ -285,6 +285,11 @@ async function pollStatus(jobId, company) {
   }
 }
 
+function scrollToChat() {
+  el('chat-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  setTimeout(() => el('chat-input').focus(), 400);
+}
+
 function finishAnalysis(company, data) {
   triedNames.add(company.toLowerCase());
   stopLoadingSteps();
@@ -307,6 +312,34 @@ function finishAnalysis(company, data) {
     `Ask me anything about their strategy.`,
     []
   );
+
+  renderSuggestedQuestions(company);
+}
+
+function renderSuggestedQuestions(company) {
+  const win = el('chat-window');
+  const chips = [
+    `What is ${company} building in the next 6–12 months?`,
+    `If I compete with ${company}, what should I worry about?`,
+    `What technical skills is ${company} prioritizing?`,
+    `How is ${company} approaching enterprise sales?`,
+  ];
+
+  const wrap = document.createElement('div');
+  wrap.className = 'suggested-qs';
+  chips.forEach(q => {
+    const btn = document.createElement('button');
+    btn.className = 'sq-chip';
+    btn.textContent = q;
+    btn.onclick = () => {
+      el('chat-input').value = q;
+      wrap.remove();
+      sendChat();
+    };
+    wrap.appendChild(btn);
+  });
+  win.appendChild(wrap);
+  win.scrollTop = win.scrollHeight;
 }
 
 /* ── Render Results ── */
