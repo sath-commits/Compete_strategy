@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HireSignal — Competitive Intelligence from Hiring Data</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    /* ── Tokens ── */
+    :root {
+      --black:      #0A0A0A;
+      --lime:       #C5F135;
+      --lime-dark:  #a8d020;
+      --cream:      #F5F0E8;
+      --cream-dark: #EDE8DF;
+      --white:      #FFFFFF;
+      --text:       #111111;
+      --text-2:     #555555;
+      --text-3:     #999999;
+      --border:     #E2DDD4;
+      --card:       #FFFFFF;
+      --radius:     16px;
+      --radius-sm:  10px;
+      --pill:       999px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--cream);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Navbar ── */
+    .navbar {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--black);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 40px; height: 64px;
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: 10px;
+      color: var(--white); font-weight: 800; font-size: 1.15rem;
+      text-decoration: none; letter-spacing: -0.3px;
+    }
+    .nav-logo .logo-dot { color: var(--lime); }
+    .nav-links { display: flex; align-items: center; gap: 8px; }
+    .nav-link {
+      color: #AAAAAA; font-size: 0.88rem; font-weight: 500;
+      text-decoration: none; padding: 6px 14px; border-radius: var(--pill);
+      transition: color 0.2s, background 0.2s;
+    }
+    .nav-link:hover { color: var(--white); background: rgba(255,255,255,0.08); }
+    .nav-cta {
+      background: var(--lime); color: var(--black);
+      font-weight: 700; font-size: 0.88rem;
+      padding: 8px 18px; border-radius: var(--pill);
+      text-decoration: none; transition: background 0.2s;
+    }
+    .nav-cta:hover { background: var(--lime-dark); color: var(--black); }
+
+    /* ── Hero ── */
+    .hero {
+      background: var(--lime);
+      padding: 80px 40px 72px;
+      text-align: center;
+    }
+    .hero-eyebrow {
+      display: inline-block;
+      background: rgba(0,0,0,0.1); color: var(--black);
+      font-size: 0.78rem; font-weight: 700; letter-spacing: 1.5px;
+      text-transform: uppercase; padding: 5px 14px;
+      border-radius: var(--pill); margin-bottom: 24px;
+    }
+    .hero h1 {
+      font-size: clamp(2.4rem, 6vw, 4.2rem);
+      font-weight: 900; line-height: 1.05;
+      letter-spacing: -2px; color: var(--black);
+      max-width: 780px; margin: 0 auto 16px;
+    }
+    .hero-sub {
+      font-size: 1.1rem; color: rgba(0,0,0,0.6);
+      max-width: 520px; margin: 0 auto 40px;
+      font-weight: 400; line-height: 1.6;
+    }
+
+    /* Search bar */
+    .search-wrap {
+      max-width: 580px; margin: 0 auto;
+    }
+    .search-row {
+      display: flex; background: var(--white);
+      border-radius: var(--pill);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+      overflow: hidden; padding: 6px 6px 6px 24px;
+      align-items: center; gap: 8px;
+    }
+    .search-input {
+      flex: 1; border: none; outline: none;
+      font-family: 'Inter', sans-serif;
+      font-size: 1rem; font-weight: 500; color: var(--text);
+      background: transparent;
+    }
+    .search-input::placeholder { color: var(--text-3); font-weight: 400; }
+    .btn-analyze {
+      background: var(--black); color: var(--white);
+      border: none; border-radius: var(--pill);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.92rem; font-weight: 700;
+      padding: 12px 26px; cursor: pointer;
+      white-space: nowrap; transition: background 0.2s;
+      display: flex; align-items: center; gap-6px;
+    }
+    .btn-analyze:hover { background: #222; }
+    .btn-analyze:disabled { background: #555; cursor: not-allowed; }
+
+    /* Status row */
+    .status-row {
+      display: flex; align-items: center; gap: 16px;
+      justify-content: center; flex-wrap: wrap;
+      margin-top: 16px; min-height: 28px;
+    }
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 0.78rem; font-weight: 600;
+      padding: 4px 12px; border-radius: var(--pill);
+    }
+    .pill-api { background: rgba(0,0,0,0.1); color: var(--black); }
+    .pill-cache { background: var(--black); color: var(--lime); }
+    .pill-btn {
+      background: transparent; border: 1.5px solid rgba(0,0,0,0.2);
+      color: rgba(0,0,0,0.6); cursor: pointer; font-family: 'Inter', sans-serif;
+      font-size: 0.78rem; font-weight: 600;
+      padding: 4px 12px; border-radius: var(--pill);
+      transition: all 0.2s;
+    }
+    .pill-btn:hover { border-color: var(--black); color: var(--black); }
+    #error-msg { color: #cc2200; font-size: 0.85rem; font-weight: 500; }
+
+    /* Disambiguation */
+    #disambig-panel {
+      max-width: 540px; margin: 16px auto 0;
+      background: var(--white); border-radius: var(--radius);
+      padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    .disambig-label {
+      font-size: 0.8rem; font-weight: 600; color: var(--text-2);
+      text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;
+    }
+    #disambig-options { display: flex; flex-wrap: wrap; gap: 8px; }
+    .disambig-btn {
+      background: var(--cream); border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm); padding: 10px 16px;
+      cursor: pointer; text-align: left; transition: all 0.15s;
+      font-family: 'Inter', sans-serif;
+    }
+    .disambig-btn:hover { border-color: var(--black); background: var(--white); }
+    .disambig-btn-name { font-weight: 700; font-size: 0.9rem; color: var(--text); display: block; }
+    .disambig-btn-desc { font-size: 0.75rem; color: var(--text-3); display: block; margin-top: 2px; }
+
+    /* ── Results ── */
+    #results-section { background: var(--cream); padding: 48px 0 32px; }
+
+    .container { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
+
+    /* Stats */
+    .stats-row { display: flex; gap: 16px; margin-bottom: 32px; flex-wrap: wrap; }
+    .stat-card {
+      background: var(--white); border-radius: var(--radius);
+      padding: 20px 28px; flex: 1; min-width: 140px;
+      border: 1px solid var(--border);
+    }
+    .stat-num { font-size: 2.2rem; font-weight: 900; color: var(--black); letter-spacing: -1px; }
+    .stat-lbl { font-size: 0.75rem; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+
+    /* Content grid */
+    .results-grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 20px; }
+    @media (max-width: 768px) { .results-grid { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--white); border-radius: var(--radius);
+      border: 1px solid var(--border); padding: 24px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 0.72rem; font-weight: 800; letter-spacing: 1.5px;
+      text-transform: uppercase; color: var(--text-3); margin-bottom: 18px;
+    }
+
+    /* Insight cards */
+    .insight-card {
+      border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+      padding: 18px; margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+    .insight-card:hover { border-color: #AAAAAA; }
+    .domain-tag {
+      display: inline-block;
+      background: var(--black); color: var(--lime);
+      font-size: 0.68rem; font-weight: 800; letter-spacing: 1px;
+      text-transform: uppercase; padding: 3px 10px;
+      border-radius: var(--pill); margin-bottom: 10px;
+    }
+    .insight-text { font-size: 0.88rem; color: var(--text); line-height: 1.65; }
+    .evidence-pills { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 4px; }
+    .ev-pill {
+      background: var(--cream); border: 1px solid var(--border);
+      border-radius: 6px; font-size: 0.72rem; color: var(--text-2);
+      padding: 3px 8px;
+    }
+
+    /* Skills */
+    .skill-row { margin-bottom: 10px; }
+    .skill-meta { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-2); margin-bottom: 4px; font-weight: 500; }
+    .skill-track { background: var(--cream-dark); border-radius: 3px; height: 6px; }
+    .skill-fill { height: 6px; background: var(--black); border-radius: 3px; }
+
+    /* ── Chat ── */
+    #chat-section { background: var(--white); padding: 48px 0; border-top: 1px solid var(--border); }
+    .chat-heading { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 6px; }
+    .chat-sub { font-size: 0.9rem; color: var(--text-2); margin-bottom: 24px; }
+    .chat-window {
+      background: var(--cream); border-radius: var(--radius);
+      border: 1px solid var(--border);
+      height: 400px; overflow-y: auto;
+      padding: 20px; display: flex; flex-direction: column; gap: 14px;
+    }
+    .msg-bubble { max-width: 82%; padding: 12px 16px; border-radius: 14px; font-size: 0.9rem; line-height: 1.6; }
+    .msg-user { background: var(--black); color: var(--white); border-bottom-right-radius: 4px; align-self: flex-end; }
+    .msg-bot { background: var(--white); border: 1px solid var(--border); color: var(--text); border-bottom-left-radius: 4px; align-self: flex-start; }
+    .msg-bot strong { color: var(--black); }
+    .evidence-block { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+    .ev-label { font-size: 0.72rem; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+    .ev-link { color: var(--text-2); font-size: 0.78rem; display: block; text-decoration: none; margin-bottom: 3px; }
+    .ev-link:hover { color: var(--black); text-decoration: underline; }
+    .chat-input-row {
+      display: flex; background: var(--cream); border: 1.5px solid var(--border);
+      border-radius: var(--pill); padding: 6px 6px 6px 20px;
+      gap: 8px; align-items: center; margin-top: 12px;
+      transition: border-color 0.2s;
+    }
+    .chat-input-row:focus-within { border-color: var(--black); }
+    .chat-input {
+      flex: 1; border: none; outline: none; background: transparent;
+      font-family: 'Inter', sans-serif; font-size: 0.92rem; color: var(--text);
+    }
+    .chat-input::placeholder { color: var(--text-3); }
+    .btn-send {
+      background: var(--black); color: var(--white);
+      border: none; border-radius: var(--pill);
+      padding: 10px 20px; font-family: 'Inter', sans-serif;
+      font-size: 0.85rem; font-weight: 700; cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-send:hover { background: #333; }
+    .typing-indicator span {
+      display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+      background: var(--text-3); margin: 0 2px;
+      animation: bounce 1.2s infinite;
+    }
+    .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-7px)} }
+
+    /* ── Info Sections ── */
+    .info-section { padding: 80px 0; }
+    .info-section.alt { background: var(--cream-dark); }
+    .info-section.dark { background: var(--black); color: var(--white); }
+    .section-eyebrow {
+      font-size: 0.72rem; font-weight: 800; letter-spacing: 2px;
+      text-transform: uppercase; color: var(--text-3); margin-bottom: 12px;
+    }
+    .info-section.dark .section-eyebrow { color: rgba(255,255,255,0.4); }
+    .section-heading {
+      font-size: clamp(1.8rem, 4vw, 2.8rem); font-weight: 900;
+      letter-spacing: -1px; line-height: 1.1; margin-bottom: 16px;
+    }
+    .section-body { font-size: 1rem; color: var(--text-2); line-height: 1.7; max-width: 560px; }
+    .info-section.dark .section-body { color: rgba(255,255,255,0.6); }
+
+    /* How to use steps */
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-top: 40px; }
+    .step-card { background: var(--white); border-radius: var(--radius); padding: 24px; border: 1px solid var(--border); }
+    .step-num {
+      width: 36px; height: 36px; background: var(--black); color: var(--lime);
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: 0.85rem; font-weight: 800; margin-bottom: 14px;
+    }
+    .step-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 6px; }
+    .step-desc { font-size: 0.85rem; color: var(--text-2); line-height: 1.6; }
+
+    /* Roadmap */
+    .roadmap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 40px; }
+    .roadmap-card {
+      border-radius: var(--radius); padding: 24px;
+      border: 1.5px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.05);
+    }
+    .roadmap-phase {
+      font-size: 0.68rem; font-weight: 800; letter-spacing: 1.5px;
+      text-transform: uppercase; color: var(--lime); margin-bottom: 10px;
+    }
+    .roadmap-title { font-size: 1rem; font-weight: 700; color: var(--white); margin-bottom: 8px; }
+    .roadmap-items { list-style: none; }
+    .roadmap-items li {
+      font-size: 0.85rem; color: rgba(255,255,255,0.55);
+      padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
+      line-height: 1.5;
+    }
+    .roadmap-items li:last-child { border-bottom: none; }
+    .roadmap-items li::before { content: "→ "; color: var(--lime); font-weight: 700; }
+
+    /* Contact */
+    .contact-grid { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 32px; }
+    .contact-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 14px 24px; border-radius: var(--pill);
+      font-family: 'Inter', sans-serif; font-weight: 700;
+      font-size: 0.9rem; text-decoration: none; transition: all 0.2s;
+    }
+    .contact-btn.linkedin { background: var(--lime); color: var(--black); }
+    .contact-btn.linkedin:hover { background: var(--lime-dark); }
+    .contact-btn.email { background: rgba(255,255,255,0.1); color: var(--white); border: 1.5px solid rgba(255,255,255,0.15); }
+    .contact-btn.email:hover { background: rgba(255,255,255,0.18); }
+
+    /* Footer */
+    .footer {
+      background: var(--black); color: rgba(255,255,255,0.35);
+      text-align: center; padding: 24px; font-size: 0.8rem;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+
+    /* Utilities */
+    .hidden { display: none !important; }
+    .spinner-sm { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Loading steps */
+    .load-step { display: flex; align-items: center; gap: 12px; transition: opacity 0.3s; }
+    .load-step.waiting { opacity: 0.35; }
+    .load-step.active  { opacity: 1; }
+    .load-step.done    { opacity: 0.6; }
+    .step-icon {
+      width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; font-size: 0.85rem;
+    }
+    .step-icon.waiting { background: rgba(0,0,0,0.1); color: rgba(0,0,0,0.4); }
+    .step-icon.active  { background: var(--black); color: var(--lime); }
+    .step-icon.done    { background: var(--black); color: var(--lime); }
+    .step-spin { width: 16px; height: 16px; border: 2px solid rgba(0,0,0,0.15); border-top-color: var(--black); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    .step-text-wrap { flex: 1; }
+    .step-label { font-size: 0.88rem; font-weight: 700; color: var(--black); }
+    .step-detail { font-size: 0.75rem; color: rgba(0,0,0,0.5); margin-top: 1px; }
+  </style>
+</head>
+<body>
+
+<!-- ── Navbar ── -->
+<nav class="navbar">
+  <a class="nav-logo" href="#">
+    <i class="bi bi-graph-up-arrow" style="color:var(--lime);font-size:1.2rem"></i>
+    Hire<span class="logo-dot">Signal</span>
+  </a>
+  <div class="nav-links">
+    <a class="nav-link" href="#about">About</a>
+    <a class="nav-link" href="#how-to-use">How to use</a>
+    <a class="nav-link" href="#roadmap">Roadmap</a>
+    <a class="nav-cta" href="#contact">Contact</a>
+  </div>
+</nav>
+
+<!-- ── Hero ── -->
+<section class="hero">
+  <div class="hero-eyebrow">Competitive Intelligence · Powered by AI</div>
+  <h1>What is your competitor building?</h1>
+  <p class="hero-sub">Analyze any company's hiring patterns and uncover their product strategy before they announce it.</p>
+
+  <p style="font-size:0.78rem;font-weight:600;color:rgba(0,0,0,0.45);margin-bottom:14px;letter-spacing:0.2px">
+    🇺🇸 Optimised for US-based companies — works best with tech firms that post on LinkedIn &amp; Indeed
+  </p>
+
+  <div class="search-wrap">
+    <div class="search-row">
+      <i class="bi bi-search" style="color:#AAAAAA;font-size:1rem;flex-shrink:0"></i>
+      <input id="company-input" class="search-input" type="text" placeholder="e.g. OpenAI, Stripe, Anthropic, Microsoft, Salesforce…" />
+      <button id="analyze-btn" class="btn-analyze" onclick="runAnalysis()">
+        <span id="btn-text">Analyze &nbsp;→</span>
+        <span id="btn-spinner" class="hidden"><span class="spinner-sm"></span>&nbsp; Analyzing…</span>
+      </button>
+    </div>
+
+    <div class="status-row">
+      <span id="error-msg" class="hidden"></span>
+      <span id="did-you-mean" class="hidden" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"></span>
+<span id="cache-badge" class="status-pill pill-cache hidden">
+        <i class="bi bi-database-check"></i> Loaded from cache — no API call used
+      </span>
+      <button id="deep-scan-btn" class="pill-btn hidden" onclick="runAnalysis(null, true)">
+        <i class="bi bi-arrow-clockwise"></i> Force fresh fetch
+      </button>
+    </div>
+
+    <!-- Loading progress panel -->
+    <div id="loading-panel" class="hidden" style="max-width:540px;margin:24px auto 0">
+      <div style="background:rgba(0,0,0,0.08);border-radius:16px;padding:24px">
+        <div id="loading-steps" style="display:flex;flex-direction:column;gap:12px"></div>
+      </div>
+    </div>
+
+    <div id="disambig-panel" class="hidden">
+      <p class="disambig-label"><i class="bi bi-question-circle me-1"></i>Did you mean one of these?</p>
+      <div id="disambig-options"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Results ── -->
+<section id="results-section" class="hidden">
+  <div class="container">
+
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-num" id="stat-jobs">—</div>
+        <div class="stat-lbl">Jobs Analyzed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" id="stat-domains">—</div>
+        <div class="stat-lbl">Strategic Domains</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" id="stat-insights">—</div>
+        <div class="stat-lbl">Insights Generated</div>
+      </div>
+    </div>
+
+    <div class="results-grid">
+      <div>
+        <div class="card">
+          <div class="card-title">Hiring by Domain</div>
+          <canvas id="domain-chart" height="260"></canvas>
+        </div>
+        <div class="card">
+          <div class="card-title">Top Skills In Demand</div>
+          <div id="skills-list"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Seniority Breakdown</div>
+          <canvas id="seniority-chart" height="180"></canvas>
+        </div>
+      </div>
+
+      <div>
+        <div class="card" style="min-height:300px">
+          <div class="card-title">Strategic Insights</div>
+          <div id="insights-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Chat ── -->
+<section id="chat-section" class="hidden">
+  <div class="container">
+    <div style="max-width:800px;margin:0 auto">
+      <h2 class="chat-heading">Ask a strategic question</h2>
+      <p class="chat-sub">Ask about hiring patterns, product strategy, or what this company's moves mean for your business.</p>
+      <div class="chat-window" id="chat-window"></div>
+      <div class="chat-input-row">
+        <i class="bi bi-chat-dots" style="color:#AAAAAA;flex-shrink:0"></i>
+        <input id="chat-input" class="chat-input" type="text"
+          placeholder="e.g. How is this company approaching mobile growth? What should it mean for my company?" />
+        <button class="btn-send" onclick="sendChat()">Send <i class="bi bi-arrow-right"></i></button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── About ── -->
+<section class="info-section" id="about">
+  <div class="container">
+    <div style="max-width:680px">
+      <p class="section-eyebrow">About HireSignal</p>
+      <h2 class="section-heading">Intelligence hidden in plain sight</h2>
+      <p class="section-body">
+        Every time a company posts a job, they reveal something about where they are going. A cluster of iOS engineers signals a mobile push. A wave of ML infrastructure roles signals they are building in-house models. Multiple roles mentioning the same internal team name signals that team is expanding fast.
+        <br><br>
+        HireSignal reads those signals automatically. Enter any company name, and within minutes you get a structured view of what they are likely building — backed by evidence from their own job postings.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ── How to Use ── -->
+<section class="info-section alt" id="how-to-use">
+  <div class="container">
+    <p class="section-eyebrow">How to use it</p>
+    <h2 class="section-heading">Three steps to competitive clarity</h2>
+    <div class="steps">
+      <div class="step-card">
+        <div class="step-num">1</div>
+        <div class="step-title">Search any company</div>
+        <div class="step-desc">Type a company name. HireSignal fetches their recent job postings from across the web — LinkedIn, Indeed, Glassdoor and more.</div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">2</div>
+        <div class="step-title">Read the signals</div>
+        <div class="step-desc">AI extracts tools, metrics, team names and business goals from each posting. Hiring patterns are grouped into strategic domains with consultant-style insights.</div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">3</div>
+        <div class="step-title">Ask deeper questions</div>
+        <div class="step-desc">Use the chat panel to ask specific questions: "How are they approaching enterprise sales?" or "What does this mean for my product roadmap?"</div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">4</div>
+        <div class="step-title">Results are cached</div>
+        <div class="step-desc">Every search is saved locally for 7 days. Re-searching the same company is instant and costs zero additional API credits.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Roadmap ── -->
+<section class="info-section dark" id="roadmap">
+  <div class="container">
+    <p class="section-eyebrow">Product Roadmap</p>
+    <h2 class="section-heading" style="color:var(--white)">What's coming next</h2>
+    <p class="section-body">HireSignal is actively being developed. Here is what is planned for the next phases.</p>
+    <div class="roadmap-grid">
+      <div class="roadmap-card">
+        <div class="roadmap-phase">Phase 2 · Q2 2026</div>
+        <div class="roadmap-title">Multi-company comparison</div>
+        <ul class="roadmap-items">
+          <li>Compare hiring signals across competitors side by side</li>
+          <li>Domain overlap heatmap</li>
+          <li>Leader board: who is hiring fastest in each domain</li>
+        </ul>
+      </div>
+      <div class="roadmap-card">
+        <div class="roadmap-phase">Phase 3 · Q3 2026</div>
+        <div class="roadmap-title">Trend tracking over time</div>
+        <ul class="roadmap-items">
+          <li>Weekly automated re-scans per company</li>
+          <li>Hiring velocity charts (month over month)</li>
+          <li>Email alerts when a competitor starts a new hiring wave</li>
+        </ul>
+      </div>
+      <div class="roadmap-card">
+        <div class="roadmap-phase">Phase 4 · Q4 2026</div>
+        <div class="roadmap-title">Enterprise features</div>
+        <ul class="roadmap-items">
+          <li>Team workspaces and saved watchlists</li>
+          <li>Exportable PDF intelligence reports</li>
+          <li>API access for integration into strategy tools</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Contact ── -->
+<section class="info-section dark" id="contact" style="padding-top:0;border-top:1px solid rgba(255,255,255,0.06)">
+  <div class="container">
+    <p class="section-eyebrow">Built by</p>
+    <h2 class="section-heading" style="color:var(--white)">Sathappan</h2>
+    <p class="section-body">
+      Product and strategy professional passionate about building tools that give teams an unfair competitive advantage.
+      HireSignal was built as a personal project to solve a real problem: how do you track what competitors are building before they announce it?
+    </p>
+    <div class="contact-grid">
+      <a class="contact-btn linkedin" href="https://www.linkedin.com/in/sathappan-sathappan" target="_blank">
+        <i class="bi bi-linkedin"></i> Connect on LinkedIn
+      </a>
+      <a class="contact-btn email" href="mailto:sathappan.nus@gmail.com">
+        <i class="bi bi-envelope-fill"></i> sathappan.nus@gmail.com
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ── -->
+<footer class="footer">
+  © 2026 HireSignal · Built by Sathappan · All rights reserved
+</footer>
+
+<script src="/static/script.js"></script>
+</body>
+</html>

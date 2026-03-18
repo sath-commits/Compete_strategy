@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --black: #0A0A0A;
+      --lime: #C5F135;
+      --cream: #F5F0E8;
+      --white: #FFFFFF;
+      --muted: #6b7280;
+      --border: #E5E7EB;
+      --card: #FFFFFF;
+      --bg: #F9FAFB;
+      --green: #22c55e;
+      --red: #ef4444;
+      --amber: #f59e0b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--black);
+      min-height: 100vh;
+    }
+
+    /* ── Navbar ── */
+    .navbar {
+      background: var(--black);
+      padding: 0 32px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .navbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--white);
+      font-weight: 700;
+      font-size: 0.95rem;
+      text-decoration: none;
+    }
+    .brand-dot { width: 8px; height: 8px; background: var(--lime); border-radius: 50%; }
+    .nav-badge {
+      background: #1a1a1a;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+      border: 1px solid #333;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .nav-right { display: flex; align-items: center; gap: 16px; }
+    .refresh-btn {
+      background: var(--lime);
+      color: var(--black);
+      border: none;
+      border-radius: 20px;
+      padding: 6px 16px;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .refresh-btn:hover { opacity: 0.85; }
+    .last-updated {
+      color: #555;
+      font-size: 0.75rem;
+    }
+
+    /* ── Layout ── */
+    .container {
+      max-width: 1300px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    .page-title {
+      font-size: 1.4rem;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+    .page-subtitle {
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-bottom: 28px;
+    }
+
+    /* ── Stat cards ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 22px;
+    }
+    .stat-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 6px;
+    }
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .stat-sub {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .stat-sub .up { color: var(--green); font-weight: 600; }
+    .stat-sub .warn { color: var(--amber); font-weight: 600; }
+    .stat-sub .danger { color: var(--red); font-weight: 600; }
+
+    /* ── Charts row ── */
+    .charts-row {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    /* ── Bottom row ── */
+    .bottom-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+    }
+
+    /* ── Panel card ── */
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 22px;
+    }
+    .panel-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    /* ── Activity chart ── */
+    .chart-wrap { position: relative; height: 200px; }
+
+    /* ── Top companies ── */
+    .company-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+    .company-row:last-child { border-bottom: none; }
+    .company-bar-wrap { flex: 1; margin: 0 12px; }
+    .company-bar-track {
+      background: var(--bg);
+      border-radius: 4px;
+      height: 6px;
+      overflow: hidden;
+    }
+    .company-bar-fill {
+      background: var(--black);
+      border-radius: 4px;
+      height: 100%;
+    }
+    .company-count {
+      font-weight: 700;
+      font-size: 0.8rem;
+      min-width: 24px;
+      text-align: right;
+    }
+
+    /* ── Recent searches ── */
+    .search-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+    }
+    .search-row:last-child { border-bottom: none; }
+    .search-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .icon-cache { background: #dcfce7; color: #16a34a; }
+    .icon-fresh { background: #dbeafe; color: #1d4ed8; }
+    .icon-error { background: #fee2e2; color: #dc2626; }
+    .search-company { font-weight: 600; margin-bottom: 2px; }
+    .search-meta { color: var(--muted); font-size: 0.72rem; }
+    .badge {
+      display: inline-block;
+      border-radius: 10px;
+      padding: 1px 7px;
+      font-size: 0.68rem;
+      font-weight: 600;
+    }
+    .badge-cache { background: #dcfce7; color: #16a34a; }
+    .badge-fresh { background: #dbeafe; color: #1d4ed8; }
+    .badge-error { background: #fee2e2; color: #dc2626; }
+
+    /* ── Referrers ── */
+    .ref-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+    }
+    .ref-row:last-child { border-bottom: none; }
+    .ref-url {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 180px;
+      color: var(--muted);
+    }
+
+    /* ── API meter ── */
+    .api-meter-track {
+      background: var(--bg);
+      border-radius: 8px;
+      height: 10px;
+      overflow: hidden;
+      margin: 8px 0 4px;
+    }
+    .api-meter-fill {
+      height: 100%;
+      border-radius: 8px;
+      transition: width 0.5s ease;
+    }
+    .empty-state { color: var(--muted); font-size: 0.8rem; font-style: italic; padding: 8px 0; }
+
+    @media (max-width: 900px) {
+      .charts-row { grid-template-columns: 1fr; }
+      .bottom-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<nav class="navbar">
+  <a class="navbar-brand" href="/">
+    <div class="brand-dot"></div>
+    HireSignal
+  </a>
+  <div class="nav-right">
+    <span class="last-updated" id="last-updated">Loading…</span>
+    <button class="refresh-btn" onclick="loadData()">
+      <i class="bi bi-arrow-clockwise"></i> Refresh
+    </button>
+    <span class="nav-badge">Admin</span>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="page-title">Dashboard</div>
+  <div class="page-subtitle">Live usage analytics — internal only</div>
+
+  <!-- ── Stat cards ── -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Page Views (All Time)</div>
+      <div class="stat-value" id="s-total-views">—</div>
+      <div class="stat-sub"><span class="up" id="s-views-today">—</span> today</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Unique Visitors</div>
+      <div class="stat-value" id="s-unique">—</div>
+      <div class="stat-sub"><span class="up" id="s-unique-today">—</span> today</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Searches</div>
+      <div class="stat-value" id="s-searches">—</div>
+      <div class="stat-sub"><span class="up" id="s-searches-today">—</span> today</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Cache Hit Rate</div>
+      <div class="stat-value" id="s-cache-rate">—</div>
+      <div class="stat-sub" id="s-cache-sub">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">JSearch API This Month</div>
+      <div class="stat-value" id="s-api-used">—</div>
+      <div class="stat-sub">
+        <span id="s-api-remaining">—</span> remaining of 200
+      </div>
+      <div class="api-meter-track">
+        <div class="api-meter-fill" id="api-meter" style="width:0%"></div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Failed Searches</div>
+      <div class="stat-value" id="s-failed">—</div>
+      <div class="stat-sub">no results or errors</div>
+    </div>
+  </div>
+
+  <!-- ── Activity chart + Top companies ── -->
+  <div class="charts-row">
+    <div class="panel">
+      <div class="panel-title">Activity — last 14 days</div>
+      <div class="chart-wrap">
+        <canvas id="activity-chart"></canvas>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Top Companies Searched</div>
+      <div id="top-companies-list"></div>
+    </div>
+  </div>
+
+  <!-- ── Recent searches + Referrers ── -->
+  <div class="bottom-row">
+    <div class="panel" style="grid-column: span 2">
+      <div class="panel-title">Recent Searches</div>
+      <div id="recent-list"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Traffic Sources</div>
+      <div id="referrers-list"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let activityChart = null;
+
+async function loadData() {
+  try {
+    const resp = await fetch('/admin/data');
+    const d = await resp.json();
+
+    document.getElementById('last-updated').textContent =
+      'Updated ' + new Date().toLocaleTimeString();
+
+    renderStats(d);
+    renderActivityChart(d.daily_views, d.daily_searches);
+    renderTopCompanies(d.top_companies);
+    renderRecent(d.recent_searches);
+    renderReferrers(d.top_referrers);
+  } catch (e) {
+    document.getElementById('last-updated').textContent = 'Failed to load';
+  }
+}
+
+function renderStats(d) {
+  const pv = d.page_views;
+  const sr = d.searches;
+  const api = d.api;
+
+  set('s-total-views', pv.total.toLocaleString());
+  set('s-views-today', pv.today.toLocaleString());
+  set('s-unique', pv.unique_visitors.toLocaleString());
+  set('s-unique-today', pv.unique_today.toLocaleString());
+  set('s-searches', sr.total.toLocaleString());
+  set('s-searches-today', sr.today.toLocaleString());
+
+  const successful = sr.cache_hits + sr.fresh_fetches;
+  const rate = successful > 0
+    ? Math.round((sr.cache_hits / successful) * 100) + '%'
+    : '—';
+  set('s-cache-rate', rate);
+  set('s-cache-sub', `${sr.cache_hits} cached · ${sr.fresh_fetches} fresh`);
+
+  set('s-api-used', api.this_month.toLocaleString());
+  const remaining = api.remaining;
+  const remEl = document.getElementById('s-api-remaining');
+  remEl.textContent = remaining;
+  remEl.className = remaining < 20 ? 'danger' : remaining < 50 ? 'warn' : 'up';
+
+  const pct = Math.min(100, Math.round((api.this_month / 200) * 100));
+  const meter = document.getElementById('api-meter');
+  meter.style.width = pct + '%';
+  meter.style.background = pct > 75 ? '#ef4444' : pct > 40 ? '#f59e0b' : '#C5F135';
+
+  const failedEl = document.getElementById('s-failed');
+  failedEl.textContent = sr.failed.toLocaleString();
+  failedEl.style.color = sr.failed > 0 ? '#ef4444' : '#0A0A0A';
+}
+
+function renderActivityChart(views, searches) {
+  // Build a full 14-day date range so gaps show as 0
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    days.push(d.toISOString().slice(0, 10));
+  }
+
+  const viewMap = Object.fromEntries(views.map(r => [r.day, r.count]));
+  const searchMap = Object.fromEntries(searches.map(r => [r.day, r.count]));
+
+  const labels = days.map(d => {
+    const parts = d.split('-');
+    return parts[1] + '/' + parts[2];
+  });
+  const viewData = days.map(d => viewMap[d] || 0);
+  const searchData = days.map(d => searchMap[d] || 0);
+
+  if (activityChart) activityChart.destroy();
+  const ctx = document.getElementById('activity-chart').getContext('2d');
+  activityChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Page Views',
+          data: viewData,
+          borderColor: '#0A0A0A',
+          backgroundColor: 'rgba(10,10,10,0.05)',
+          tension: 0.3,
+          pointRadius: 3,
+          fill: true,
+        },
+        {
+          label: 'Searches',
+          data: searchData,
+          borderColor: '#C5F135',
+          backgroundColor: 'rgba(197,241,53,0.15)',
+          tension: 0.3,
+          pointRadius: 3,
+          fill: true,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: { font: { size: 11, family: 'Inter' }, color: '#555', boxWidth: 12 }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#999', font: { size: 10 } }, grid: { display: false } },
+        y: { ticks: { color: '#999', font: { size: 10 } }, grid: { color: '#F0F0F0' }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+function renderTopCompanies(companies) {
+  const el = document.getElementById('top-companies-list');
+  if (!companies.length) {
+    el.innerHTML = '<div class="empty-state">No searches yet.</div>';
+    return;
+  }
+  const max = companies[0].count;
+  el.innerHTML = companies.map(c => `
+    <div class="company-row">
+      <span style="font-weight:600;min-width:100px;font-size:0.82rem">${esc(c.company)}</span>
+      <div class="company-bar-wrap">
+        <div class="company-bar-track">
+          <div class="company-bar-fill" style="width:${Math.round((c.count/max)*100)}%"></div>
+        </div>
+      </div>
+      <span class="company-count">${c.count}</span>
+    </div>`).join('');
+}
+
+function renderRecent(searches) {
+  const el = document.getElementById('recent-list');
+  if (!searches.length) {
+    el.innerHTML = '<div class="empty-state">No searches recorded yet.</div>';
+    return;
+  }
+  el.innerHTML = searches.map(s => {
+    const iconClass = !s.success ? 'icon-error' : s.from_cache ? 'icon-cache' : 'icon-fresh';
+    const icon = !s.success ? 'bi-x' : s.from_cache ? 'bi-database' : 'bi-cloud-download';
+    const badgeClass = !s.success ? 'badge-error' : s.from_cache ? 'badge-cache' : 'badge-fresh';
+    const badgeLabel = !s.success ? 'failed' : s.from_cache ? 'cached' : 'fresh';
+    const time = new Date(s.created_at).toLocaleString();
+    return `
+      <div class="search-row">
+        <div class="search-icon ${iconClass}"><i class="bi ${icon}"></i></div>
+        <div style="flex:1;min-width:0">
+          <div class="search-company">${esc(s.company)} <span class="badge ${badgeClass}">${badgeLabel}</span></div>
+          <div class="search-meta">${esc(s.ip || '—')} · ${time}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderReferrers(refs) {
+  const el = document.getElementById('referrers-list');
+  if (!refs.length) {
+    el.innerHTML = '<div class="empty-state">No referrer data yet.<br>Traffic has been direct so far.</div>';
+    return;
+  }
+  el.innerHTML = refs.map(r => `
+    <div class="ref-row">
+      <span class="ref-url" title="${esc(r.referrer)}">${esc(r.referrer)}</span>
+      <span style="font-weight:700;font-size:0.8rem">${r.count}</span>
+    </div>`).join('');
+}
+
+function set(id, val) { document.getElementById(id).textContent = val; }
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Load immediately, then auto-refresh every 30 seconds
+loadData();
+setInterval(loadData, 30000);
+</script>
+</body>
+</html>
