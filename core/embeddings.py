@@ -1,5 +1,6 @@
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -35,32 +36,27 @@ def get_index_count():
     return len(_load_index())
 
 
-def add_jobs_to_index(jobs):
-    index = _load_index()
+def _embed_job(args):
+    """Embed a single job. Runs in a thread pool."""
+    i, job = args
+    text = (
+        f"Title: {job.get('title', '')}\n"
+        f"Company: {job.get('company', '')}\n"
+        f"Team: {job.get('team', '')}\n"
+        f"Domains: {', '.join(job.get('domain_tags', []))}\n"
+        f"Skills: {', '.join(job.get('skills', []))}\n"
+        f"Responsibilities: {'. '.join(job.get('responsibilities', []))}\n"
+        f"Experience: {job.get('experience', '')}"
+    ).strip()
 
-    for i, job in enumerate(jobs):
-        text = (
-            f"Title: {job.get('title', '')}\n"
-            f"Company: {job.get('company', '')}\n"
-            f"Team: {job.get('team', '')}\n"
-            f"Domains: {', '.join(job.get('domain_tags', []))}\n"
-            f"Skills: {', '.join(job.get('skills', []))}\n"
-            f"Responsibilities: {'. '.join(job.get('responsibilities', []))}\n"
-            f"Experience: {job.get('experience', '')}"
-        ).strip()
+    doc_id = (
+        f"{job.get('company', 'x')}_{job.get('title', 'x')}_{i}"
+        .replace(' ', '_').replace('/', '_')[:128]
+    )
 
-        try:
-            embedding = _embed(text)
-        except Exception as e:
-            print(f"[embeddings] Embed error for '{job.get('title')}': {e}")
-            continue
-
-        doc_id = (
-            f"{job.get('company', 'x')}_{job.get('title', 'x')}_{i}"
-            .replace(' ', '_').replace('/', '_')[:128]
-        )
-
-        index[doc_id] = {
+    try:
+        embedding = _embed(text)
+        return doc_id, {
             'embedding': embedding,
             'metadata': {
                 'company': job.get('company', ''),
@@ -73,6 +69,20 @@ def add_jobs_to_index(jobs):
                 'location': job.get('location', '')
             }
         }
+    except Exception as e:
+        print(f"[embeddings] Embed error for '{job.get('title')}': {e}")
+        return None, None
+
+
+def add_jobs_to_index(jobs):
+    index = _load_index()
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(_embed_job, (i, job)) for i, job in enumerate(jobs)]
+        for future in as_completed(futures):
+            doc_id, entry = future.result()
+            if doc_id:
+                index[doc_id] = entry
 
     _save_index(index)
     print(f"[embeddings] Indexed {len(jobs)} jobs (total in index: {len(index)})")
