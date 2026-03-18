@@ -31,7 +31,7 @@ def fetch_jobs(company, num_pages=PAGES_TO_FETCH):
             "app_id": ADZUNA_APP_ID,
             "app_key": ADZUNA_APP_KEY,
             "results_per_page": RESULTS_PER_PAGE,
-            "what_and": company,
+            "company": company,
             "content-type": "application/json"
         }
         try:
