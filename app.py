@@ -9,7 +9,7 @@ import functools
 from flask import Flask, render_template, request, jsonify, Response
 from core.job_fetcher import fetch_jobs
 from core.job_extractor import extract_and_classify_jobs
-from core.embeddings import add_jobs_to_index, _get_collection
+from core.embeddings import add_jobs_to_index, get_index_count
 from core.insight_engine import generate_insights
 from core.trend_analyzer import compute_trends
 from core.rag_answerer import answer_question
@@ -32,24 +32,24 @@ ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'changeme')
 # rebuild_chroma_if_needed() re-indexes jobs from SQLite if ChromaDB is empty
 # (happens after every Render deploy since the filesystem resets).
 
-def _rebuild_chroma_if_needed():
+def _rebuild_index_if_needed():
     try:
-        collection = _get_collection()
-        if collection.count() == 0:
+        count = get_index_count()
+        if count == 0:
             all_jobs = get_all_jobs()
             if all_jobs:
-                print(f"[startup] ChromaDB empty — rebuilding from {len(all_jobs)} jobs in SQLite")
+                print(f"[startup] Embeddings index empty — rebuilding from {len(all_jobs)} jobs in SQLite")
                 add_jobs_to_index(all_jobs)
             else:
-                print("[startup] ChromaDB empty, SQLite also empty — fresh start")
+                print("[startup] Embeddings index empty, SQLite also empty — fresh start")
         else:
-            print(f"[startup] ChromaDB has {collection.count()} documents — no rebuild needed")
+            print(f"[startup] Embeddings index has {count} documents — no rebuild needed")
     except Exception as e:
-        print(f"[startup] ChromaDB rebuild skipped: {e}")
+        print(f"[startup] Index rebuild skipped: {e}")
 
 
 init_db()
-_rebuild_chroma_if_needed()
+_rebuild_index_if_needed()
 
 
 # ── Admin auth ─────────────────────────────────────────────────────────────────

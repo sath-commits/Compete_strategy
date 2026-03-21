@@ -1,21 +1,13 @@
-import chromadb
-import os
 import json
+import os
+import numpy as np
 from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-CHROMA_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'chroma')
-
-
-def _get_collection():
-    chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-    return chroma_client.get_or_create_collection(
-        name="jobs",
-        metadata={"hnsw:space": "cosine"}
-    )
+EMBEDDINGS_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'embeddings.json')
 
 
 def _embed(text):
@@ -26,9 +18,25 @@ def _embed(text):
     return response.data[0].embedding
 
 
+def _load_index():
+    if os.path.exists(EMBEDDINGS_PATH):
+        with open(EMBEDDINGS_PATH) as f:
+            return json.load(f)
+    return {}
+
+
+def _save_index(index):
+    os.makedirs(os.path.dirname(EMBEDDINGS_PATH), exist_ok=True)
+    with open(EMBEDDINGS_PATH, 'w') as f:
+        json.dump(index, f)
+
+
+def get_index_count():
+    return len(_load_index())
+
+
 def add_jobs_to_index(jobs):
-    """Embed structured jobs and store in ChromaDB."""
-    collection = _get_collection()
+    index = _load_index()
 
     for i, job in enumerate(jobs):
         text = (
@@ -49,15 +57,12 @@ def add_jobs_to_index(jobs):
 
         doc_id = (
             f"{job.get('company', 'x')}_{job.get('title', 'x')}_{i}"
-            .replace(' ', '_')
-            .replace('/', '_')[:128]
+            .replace(' ', '_').replace('/', '_')[:128]
         )
 
-        collection.upsert(
-            ids=[doc_id],
-            embeddings=[embedding],
-            documents=[text],
-            metadatas=[{
+        index[doc_id] = {
+            'embedding': embedding,
+            'metadata': {
                 'company': job.get('company', ''),
                 'title': job.get('title', ''),
                 'domain_tags': json.dumps(job.get('domain_tags', [])),
@@ -66,39 +71,36 @@ def add_jobs_to_index(jobs):
                 'job_url': job.get('job_url', ''),
                 'seniority': job.get('seniority', ''),
                 'location': job.get('location', '')
-            }]
-        )
+            }
+        }
 
-    print(f"[embeddings] Indexed {len(jobs)} jobs into ChromaDB")
+    _save_index(index)
+    print(f"[embeddings] Indexed {len(jobs)} jobs (total in index: {len(index)})")
 
 
 def search_jobs(query, company=None, n_results=8):
-    """Search ChromaDB for jobs relevant to a query, optionally filtered by company."""
-    collection = _get_collection()
+    index = _load_index()
+    if not index:
+        return []
 
     try:
-        query_embedding = _embed(query)
+        query_vec = np.array(_embed(query), dtype=np.float32)
     except Exception as e:
         print(f"[embeddings] Query embed error: {e}")
         return []
 
-    where = {"company": {"$eq": company}} if company else None
+    results = []
+    for doc_id, entry in index.items():
+        meta = entry['metadata']
+        if company and meta.get('company', '').lower() != company.lower():
+            continue
 
-    try:
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=n_results,
-            where=where,
-            include=["documents", "metadatas", "distances"]
+        doc_vec = np.array(entry['embedding'], dtype=np.float32)
+        similarity = float(
+            np.dot(query_vec, doc_vec) /
+            (np.linalg.norm(query_vec) * np.linalg.norm(doc_vec) + 1e-10)
         )
-    except Exception as e:
-        print(f"[embeddings] ChromaDB query error: {e}")
-        return []
-
-    jobs = []
-    for idx in range(len(results['ids'][0])):
-        meta = results['metadatas'][0][idx]
-        jobs.append({
+        results.append({
             'title': meta.get('title', ''),
             'company': meta.get('company', ''),
             'domain_tags': json.loads(meta.get('domain_tags', '[]')),
@@ -106,7 +108,8 @@ def search_jobs(query, company=None, n_results=8):
             'responsibilities': json.loads(meta.get('responsibilities', '[]')),
             'job_url': meta.get('job_url', ''),
             'seniority': meta.get('seniority', ''),
-            'relevance': round(1 - results['distances'][0][idx], 3)
+            'relevance': round(similarity, 3)
         })
 
-    return jobs
+    results.sort(key=lambda x: x['relevance'], reverse=True)
+    return results[:n_results]
