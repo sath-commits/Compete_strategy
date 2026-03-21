@@ -1,0 +1,44 @@
+[
+  {
+    "id": "q1",
+    "question": "Which companies are hiring evaluation engineers?",
+    "expected_domains": ["evaluation_safety"],
+    "expected_keywords": ["evaluation", "safety", "testing", "red team", "benchmark"]
+  },
+  {
+    "id": "q2",
+    "question": "Which companies are investing in AI agents?",
+    "expected_domains": ["ai_agents"],
+    "expected_keywords": ["agent", "autonomous", "workflow", "tool use", "agentic"]
+  },
+  {
+    "id": "q3",
+    "question": "How is OpenAI approaching mobile growth?",
+    "expected_domains": ["mobile_growth", "consumer_growth"],
+    "expected_keywords": ["iOS", "Android", "mobile", "app", "growth", "acquisition"]
+  },
+  {
+    "id": "q4",
+    "question": "What does Anthropic's hiring suggest about their safety strategy?",
+    "expected_domains": ["evaluation_safety", "model_research"],
+    "expected_keywords": ["safety", "alignment", "evaluation", "red team", "interpretability", "policy"]
+  },
+  {
+    "id": "q5",
+    "question": "Which companies are investing most in AI infrastructure?",
+    "expected_domains": ["ai_infrastructure", "inference_optimization"],
+    "expected_keywords": ["infrastructure", "distributed", "GPU", "serving", "inference", "cluster"]
+  },
+  {
+    "id": "q6",
+    "question": "What developer platform investments are AI companies making?",
+    "expected_domains": ["developer_platform"],
+    "expected_keywords": ["API", "SDK", "developer", "platform", "integration", "tooling"]
+  },
+  {
+    "id": "q7",
+    "question": "How are AI companies approaching enterprise sales?",
+    "expected_domains": ["enterprise_sales", "enterprise_platform"],
+    "expected_keywords": ["enterprise", "sales", "account", "customer", "B2B", "revenue"]
+  }
+]
