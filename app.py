@@ -26,6 +26,10 @@ app = Flask(__name__)
 
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'changeme')
 
+# Hard cap on JSearch calls per month. Default 190 leaves a 10-call safety buffer.
+# Override by setting JSEARCH_LIMIT env var in Render.
+JSEARCH_MONTHLY_LIMIT = int(os.getenv('JSEARCH_LIMIT', '190'))
+
 # ── Startup ────────────────────────────────────────────────────────────────────
 # Runs when gunicorn imports this module (and when running locally).
 # init_db() is safe to call multiple times — it only creates tables if missing.
@@ -165,6 +169,14 @@ def analyze():
                 'insights': insights,
                 'trends': trends,
             })
+
+    # ── Circuit breaker ────────────────────────────────────────────────────
+    usage = get_api_usage('jsearch')
+    if usage['this_month'] >= JSEARCH_MONTHLY_LIMIT:
+        return jsonify({
+            'error': f'Monthly search limit reached. Fresh searches are paused until '
+                     f'the 1st of next month. You can still search companies already analysed.'
+        }), 429
 
     job_id = str(uuid.uuid4())
     with _jobs_lock:

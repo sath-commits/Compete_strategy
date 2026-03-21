@@ -243,10 +243,19 @@ async function runAnalyze(company, forceRefresh) {
   }
 }
 
-/* Poll /status/<job_id> every 2 seconds until the background job completes */
+/* Poll /status/<job_id> every 2 seconds until done, with a 5-minute timeout */
 async function pollStatus(jobId, company) {
+  const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+  const started = Date.now();
+
   while (true) {
     await new Promise(r => setTimeout(r, 2000));
+
+    if (Date.now() - started > TIMEOUT_MS) {
+      stopLoadingSteps();
+      showError('Analysis is taking longer than expected. Please try again.');
+      return;
+    }
 
     let statusData;
     try {
@@ -272,7 +281,7 @@ async function pollStatus(jobId, company) {
       return;
     }
 
-    // status === 'running' — keep polling, progress animation continues
+    // status === 'running' — keep polling
   }
 }
 
