@@ -1,13 +1,15 @@
 from dotenv import load_dotenv
 load_dotenv()  # Must run before any other import so API keys are available
 
+import os
 import threading
 import uuid
+import functools
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response
 from core.job_fetcher import fetch_jobs
 from core.job_extractor import extract_and_classify_jobs
-from core.embeddings import add_jobs_to_index
+from core.embeddings import add_jobs_to_index, _get_collection
 from core.insight_engine import generate_insights
 from core.trend_analyzer import compute_trends
 from core.rag_answerer import answer_question
@@ -15,22 +17,63 @@ from db.db import (
     init_db, save_jobs,
     get_cached_jobs, get_cache_info,
     log_api_call, get_api_usage,
-    log_page_view, log_search, get_dashboard_data
+    log_page_view, log_search, get_dashboard_data,
+    get_all_jobs
 )
 from core.company_resolver import resolve_company, get_search_suggestions
 
 app = Flask(__name__)
 
-# ── Background job state ────────────────────────────────────────────────────
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'changeme')
+
+# ── Startup ────────────────────────────────────────────────────────────────────
+# Runs when gunicorn imports this module (and when running locally).
+# init_db() is safe to call multiple times — it only creates tables if missing.
+# rebuild_chroma_if_needed() re-indexes jobs from SQLite if ChromaDB is empty
+# (happens after every Render deploy since the filesystem resets).
+
+def _rebuild_chroma_if_needed():
+    try:
+        collection = _get_collection()
+        if collection.count() == 0:
+            all_jobs = get_all_jobs()
+            if all_jobs:
+                print(f"[startup] ChromaDB empty — rebuilding from {len(all_jobs)} jobs in SQLite")
+                add_jobs_to_index(all_jobs)
+            else:
+                print("[startup] ChromaDB empty, SQLite also empty — fresh start")
+        else:
+            print(f"[startup] ChromaDB has {collection.count()} documents — no rebuild needed")
+    except Exception as e:
+        print(f"[startup] ChromaDB rebuild skipped: {e}")
+
+
+init_db()
+_rebuild_chroma_if_needed()
+
+
+# ── Admin auth ─────────────────────────────────────────────────────────────────
+
+def _require_admin(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.authorization
+        if not auth or auth.password != ADMIN_PASSWORD:
+            return Response(
+                'Admin access required.',
+                401,
+                {'WWW-Authenticate': 'Basic realm="Admin"'}
+            )
+        return f(*args, **kwargs)
+    return decorated
+
+
+# ── Background job state ────────────────────────────────────────────────────────
 _jobs = {}
 _jobs_lock = threading.Lock()
 
 
 def _run_analysis_job(job_id: str, company: str, ip: str):
-    """
-    Runs in a background thread. Decouples the HTTP request from the (slow)
-    JSearch API call — no timeout possible since there's no HTTP deadline.
-    """
     try:
         raw_jobs = fetch_jobs(company)
 
@@ -89,6 +132,8 @@ def _run_analysis_job(job_id: str, company: str, ip: str):
             }
 
 
+# ── Routes ─────────────────────────────────────────────────────────────────────
+
 @app.route('/')
 def index():
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
@@ -106,7 +151,6 @@ def analyze():
     if not company:
         return jsonify({'error': 'Company name is required'}), 400
 
-    # ── Cache check — returns immediately ──────────────────────────────────
     if not force_refresh:
         structured_jobs = get_cached_jobs(company)
         if structured_jobs:
@@ -122,7 +166,6 @@ def analyze():
                 'trends': trends,
             })
 
-    # ── Fresh fetch — start background thread ──────────────────────────────
     job_id = str(uuid.uuid4())
     with _jobs_lock:
         _jobs[job_id] = {'status': 'running'}
@@ -178,21 +221,19 @@ def resolve():
     return jsonify(result)
 
 
-# ── Admin dashboard ────────────────────────────────────────────────────────────
-
 @app.route('/admin')
+@_require_admin
 def admin():
     return render_template('dashboard.html')
 
 
 @app.route('/admin/data')
+@_require_admin
 def admin_data():
     return jsonify(get_dashboard_data())
 
 
 if __name__ == '__main__':
-    init_db()
-    print("Database initialized.")
     print("Starting server at http://127.0.0.1:5000")
     print("Admin dashboard at http://127.0.0.1:5000/admin")
     app.run(debug=True, port=5000)

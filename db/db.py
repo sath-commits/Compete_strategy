@@ -307,6 +307,14 @@ def save_jobs(jobs):
     conn.close()
 
 
+def get_all_jobs():
+    """Return every job in the DB — used to rebuild ChromaDB index after a cold start."""
+    conn = get_conn()
+    rows = conn.execute('SELECT * FROM jobs').fetchall()
+    conn.close()
+    return [_parse_job_row(dict(row)) for row in rows]
+
+
 def get_jobs_by_company(company):
     conn = get_conn()
     rows = conn.execute(
