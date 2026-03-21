@@ -1,4 +1,5 @@
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
@@ -81,51 +82,68 @@ def _serialize_jobs_for_prompt(domain_jobs):
     return "\n".join(lines)
 
 
+def _generate_single_insight(company, domain, domain_jobs):
+    """Generate one domain insight. Runs in a thread pool."""
+    titles = [j.get('title', '') for j in domain_jobs]
+    job_block = _serialize_jobs_for_prompt(domain_jobs)
+
+    user_prompt = (
+        f"Company: {company}\n"
+        f"Strategic domain: {domain.replace('_', ' ').title()}\n"
+        f"Number of roles in this domain: {len(domain_jobs)}\n\n"
+        f"Raw hiring data:\n{job_block}\n"
+        f"Using the reasoning method above, what strategic initiative is {company} "
+        f"most likely pursuing in the '{domain.replace('_', ' ')}' domain? "
+        f"Be specific. Name tools, metrics, and team names you see repeated. "
+        f"Do not summarise — infer."
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": CONSULTANT_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.2
+        )
+        return {
+            'company': company,
+            'domain': domain,
+            'insight_text': response.choices[0].message.content.strip(),
+            'evidence': titles
+        }
+    except Exception as e:
+        print(f"[insight_engine] Error for domain '{domain}': {e}")
+        return None
+
+
 def generate_insights(company, jobs):
-    """Group jobs by domain and generate consultant-style strategic insights."""
+    """
+    Group jobs by domain and generate consultant-style insights in parallel.
+    All domain insights are generated simultaneously instead of sequentially.
+    """
     domain_groups = defaultdict(list)
     for job in jobs:
         for tag in job.get('domain_tags', []):
             domain_groups[tag].append(job)
 
+    eligible = {
+        domain: domain_jobs
+        for domain, domain_jobs in domain_groups.items()
+        if len(domain_jobs) >= MIN_JOBS_FOR_INSIGHT
+    }
+
     all_insights = []
-
-    for domain, domain_jobs in domain_groups.items():
-        if len(domain_jobs) < MIN_JOBS_FOR_INSIGHT:
-            continue
-
-        titles = [j.get('title', '') for j in domain_jobs]
-        job_block = _serialize_jobs_for_prompt(domain_jobs)
-
-        user_prompt = (
-            f"Company: {company}\n"
-            f"Strategic domain: {domain.replace('_', ' ').title()}\n"
-            f"Number of roles in this domain: {len(domain_jobs)}\n\n"
-            f"Raw hiring data:\n{job_block}\n"
-            f"Using the reasoning method above, what strategic initiative is {company} "
-            f"most likely pursuing in the '{domain.replace('_', ' ')}' domain? "
-            f"Be specific. Name tools, metrics, and team names you see repeated. "
-            f"Do not summarise — infer."
-        )
-
-        try:
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": CONSULTANT_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.2  # lower = more consistent, less hallucination
-            )
-            insight_text = response.choices[0].message.content.strip()
-            all_insights.append({
-                'company': company,
-                'domain': domain,
-                'insight_text': insight_text,
-                'evidence': titles
-            })
-        except Exception as e:
-            print(f"[insight_engine] Error for domain '{domain}': {e}")
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {
+            executor.submit(_generate_single_insight, company, domain, domain_jobs): domain
+            for domain, domain_jobs in eligible.items()
+        }
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                all_insights.append(result)
 
     if all_insights:
         save_insights(all_insights)
