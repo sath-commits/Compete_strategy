@@ -17,12 +17,32 @@ def fetch_jobs(company, num_pages=PAGES_TO_FETCH):
     """
     Fetch job postings for a company from Adzuna API.
 
-    Adzuna pagination: each page is a separate GET request (1 quota unit each).
-    We fetch pages 1–num_pages and combine all results.
+    Strategy: try company= (employer name match) first — most precise.
+    If that returns nothing, fall back to what_and= (keyword in title/description)
+    for companies that don't post on Adzuna-aggregated boards directly.
 
-    The response 'description' field is truncated to ~500 chars by Adzuna —
-    this is a platform limitation that affects extraction quality vs full JDs.
+    Each page = 1 quota unit. 3 pages × 50 results = up to 150 jobs for 3 calls.
     """
+    # Try employer-name match first, then keyword fallback
+    query_variants = [
+        {"company": company},
+        {"what_and": company},
+    ]
+
+    for query_params in query_variants:
+        label = list(query_params.items())[0]
+        all_jobs = _fetch_pages(company, query_params, num_pages)
+        if all_jobs:
+            print(f"[job_fetcher] {label[0]}='{label[1]}' → {len(all_jobs)} jobs")
+            return _normalize(all_jobs)
+        print(f"[job_fetcher] {label[0]}='{label[1]}' → 0 results, trying next variant…")
+
+    print(f"[job_fetcher] No jobs found for '{company}'")
+    return []
+
+
+def _fetch_pages(company, extra_params, num_pages):
+    """Fetch up to num_pages pages from Adzuna and return raw results."""
     base_url = "https://api.adzuna.com/v1/api/jobs/us/search/{page}"
     all_jobs = []
 
@@ -31,31 +51,21 @@ def fetch_jobs(company, num_pages=PAGES_TO_FETCH):
             "app_id": ADZUNA_APP_ID,
             "app_key": ADZUNA_APP_KEY,
             "results_per_page": RESULTS_PER_PAGE,
-            "company": company,
-            "content-type": "application/json"
+            "content-type": "application/json",
+            **extra_params
         }
         try:
-            url = base_url.format(page=page)
-            response = requests.get(url, params=params, timeout=60)
+            response = requests.get(base_url.format(page=page), params=params, timeout=60)
             response.raise_for_status()
             results = response.json().get('results', [])
-            print(f"[job_fetcher] Page {page} → {len(results)} jobs")
             all_jobs.extend(results)
-
-            # Stop early if last page returned fewer results than requested
             if len(results) < RESULTS_PER_PAGE:
                 break
-
         except Exception as e:
             print(f"[job_fetcher] Error on page {page} for '{company}': {e}")
             break
 
-    if not all_jobs:
-        print(f"[job_fetcher] No jobs found for '{company}'")
-        return []
-
-    print(f"[job_fetcher] Total: {len(all_jobs)} jobs for '{company}' ({min(num_pages, page)} API calls)")
-    return _normalize(all_jobs)
+    return all_jobs
 
 
 def _normalize(raw_jobs):
