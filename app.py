@@ -148,6 +148,11 @@ def _run_analysis_job(job_id: str, company: str, ip: str):
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
+@app.route('/ping')
+def ping():
+    return '', 204
+
+
 @app.route('/')
 def index():
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)

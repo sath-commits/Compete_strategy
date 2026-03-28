@@ -211,6 +211,12 @@ async function runAnalyze(company, forceRefresh) {
   el('analyze-btn').disabled = true;
   startLoadingSteps(company);
 
+  /* If server is cold-starting, show a friendly note after 8s */
+  const wakeTimer = setTimeout(() => {
+    const detail = document.querySelector('#lstep-0 .step-detail');
+    if (detail) detail.textContent = 'Server is waking up on Render — usually takes 30–60s on first visit…';
+  }, 8000);
+
   try {
     const resp = await fetch('/analyze', {
       method: 'POST',
@@ -218,6 +224,8 @@ async function runAnalyze(company, forceRefresh) {
       body: JSON.stringify({ company, force_refresh: forceRefresh })
     });
     const data = await resp.json();
+
+    clearTimeout(wakeTimer);
 
     if (!resp.ok) {
       stopLoadingSteps();
@@ -238,6 +246,7 @@ async function runAnalyze(company, forceRefresh) {
     }
 
   } catch (err) {
+    clearTimeout(wakeTimer);
     stopLoadingSteps();
     showError('Network error. Make sure the Flask server is running.');
   } finally {
@@ -615,7 +624,7 @@ window.addEventListener('scroll', () => {
   }, 200);
 });
 
-/* Restore state from URL on page load */
+/* Restore state from URL on page load + keepalive ping */
 document.addEventListener('DOMContentLoaded', () => {
   const params = new URLSearchParams(window.location.search);
   const q = params.get('q');
@@ -623,6 +632,11 @@ document.addEventListener('DOMContentLoaded', () => {
     el('company-input').value = q;
     runAnalysis(q, false);
   }
+
+  /* Ping every 8 minutes to prevent Render cold starts */
+  const ping = () => fetch('/ping').catch(() => {});
+  ping();
+  setInterval(ping, 8 * 60 * 1000);
 });
 
 /* ── Social sharing ── */
