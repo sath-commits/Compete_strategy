@@ -483,7 +483,11 @@ function renderInsights(insights) {
           <span class="toggle-label">${n} supporting role${n !== 1 ? 's' : ''}</span>
         </button>
         <ul class="citations-list hidden">
-          ${citations.map(c => `<li><i class="bi bi-person-badge"></i>${escHtml(c)}</li>`).join('')}
+          ${citations.map(c => {
+            const roleTitle = c.split(':')[0].trim();
+            const searchUrl = `https://www.google.com/search?q=${encodeURIComponent('"' + roleTitle + '" ' + currentCompany + ' jobs')}`;
+            return `<li><i class="bi bi-person-badge"></i><a href="${escHtml(searchUrl)}" target="_blank" class="citation-link">${escHtml(c)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`;
+          }).join('')}
         </ul>
       </div>` : ''}
     </div>`;
