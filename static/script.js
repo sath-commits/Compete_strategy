@@ -368,34 +368,21 @@ function renderResults(data) {
 
   el('cache-badge').classList.add('hidden');
 
-  renderDomainChart(trends.domain_distribution);
+  renderDomains(trends.domain_distribution);
+  renderInsights(insights);
   renderSkills(trends.top_skills);
   renderSeniorityChart(trends.seniority_distribution);
-  renderInsights(insights);
 }
 
-function renderDomainChart(domains) {
-  const ctx = el('domain-chart').getContext('2d');
-  if (domainChart) domainChart.destroy();
-
-  const labels = domains.map(d => d.domain);
-  const values = domains.map(d => d.count);
-
-  domainChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{ data: values, backgroundColor: '#0A0A0A', borderRadius: 6, borderSkipped: false }]
-    },
-    options: {
-      indexAxis: 'y',
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { ticks: { color: '#999' }, grid: { color: '#E2DDD4' } },
-        y: { ticks: { color: '#111', font: { size: 11 } }, grid: { display: false } }
-      }
-    }
-  });
+function renderDomains(domains) {
+  if (!domains || !domains.length) return;
+  const max = Math.max(...domains.map(d => d.count));
+  el('domains-pills').innerHTML = domains.map(d => `
+    <div class="domain-pill">
+      <div class="domain-pill-name">${escHtml(d.domain.replace(/_/g, ' '))}</div>
+      <div class="domain-pill-count">${d.count}<span class="domain-pill-unit"> roles</span></div>
+      <div class="domain-pill-bar"><div class="domain-pill-fill" style="width:${Math.round((d.count/max)*100)}%"></div></div>
+    </div>`).join('');
 }
 
 function renderSkills(skills) {
@@ -436,28 +423,71 @@ function renderSeniorityChart(seniority) {
   });
 }
 
+function parseInsight(text) {
+  const initMatch  = text.match(/\*\*Strategic Initiative:\*\*\s*([^\n]+)/);
+  const confMatch  = text.match(/\*\*Confidence:\*\*\s*(HIGH|MEDIUM|LOW)/i);
+  const soWhatMatch = text.match(/\*\*So What:\*\*\s*([\s\S]+?)(?:\n\n|\n\*\*|$)/);
+  const evBlock    = text.match(/\*\*Evidence Chain:\*\*([\s\S]+?)\*\*Confidence:/);
+  const citations  = evBlock
+    ? (evBlock[1].match(/^- .+$/gm) || []).map(l => l.replace(/^- /, '').trim())
+    : [];
+  return {
+    initiative: initMatch  ? initMatch[1].trim()  : '',
+    confidence: confMatch  ? confMatch[1].toUpperCase() : 'MEDIUM',
+    soWhat:     soWhatMatch ? soWhatMatch[1].trim() : '',
+    citations
+  };
+}
+
+function toggleCitations(btn) {
+  const list = btn.nextElementSibling;
+  const opening = list.classList.contains('hidden');
+  list.classList.toggle('hidden');
+  btn.querySelector('i').className = opening ? 'bi bi-chevron-up' : 'bi bi-chevron-down';
+  const n = list.children.length;
+  btn.querySelector('.toggle-label').textContent = opening
+    ? 'Hide supporting roles'
+    : `${n} supporting role${n !== 1 ? 's' : ''}`;
+}
+
 function renderInsights(insights) {
   currentInsights = insights || [];
   const container = el('insights-list');
   if (!insights || !insights.length) {
-    container.innerHTML = '<p class="text-muted">Not enough data to generate insights. Try a larger company.</p>';
+    container.innerHTML = '<p style="color:var(--text-3);font-size:0.9rem">Not enough data to generate insights. Try a larger company.</p>';
     return;
   }
-  container.innerHTML = insights.map((ins, i) => `
-    <div class="insight-card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div class="domain-tag" style="margin-bottom:0">${escHtml(ins.domain.replace(/_/g, ' '))}</div>
-        <button class="btn-copy-inline" onclick="copyInsight(${i})" title="Copy insight">
-          <i class="bi bi-copy"></i> Copy
+  container.innerHTML = insights.map((ins, i) => {
+    const { initiative, confidence, soWhat, citations } = parseInsight(ins.insight_text);
+    const domain  = ins.domain.replace(/_/g, ' ');
+    const title   = initiative || domain.toUpperCase();
+    const summary = soWhat    || ins.insight_text;
+    const n = citations.length;
+    return `
+    <div class="insight-card-v2">
+      <div class="insight-card-top">
+        <div class="insight-main">
+          <div class="insight-domain-meta"><i class="bi bi-diagram-3"></i>${escHtml(domain)}</div>
+          <div class="insight-initiative">${escHtml(title)}</div>
+          <div class="insight-so-what">${renderMarkdown(escHtml(summary))}</div>
+        </div>
+        <div class="insight-aside">
+          <span class="confidence-badge conf-${confidence}">${confidence}</span>
+          <button class="btn-copy-inline" onclick="copyInsight(${i})" title="Copy insight"><i class="bi bi-copy"></i></button>
+        </div>
+      </div>
+      ${n ? `
+      <div class="insight-citations">
+        <button class="citations-toggle" onclick="toggleCitations(this)">
+          <i class="bi bi-chevron-down"></i>
+          <span class="toggle-label">${n} supporting role${n !== 1 ? 's' : ''}</span>
         </button>
-      </div>
-      <div class="insight-text">${renderMarkdown(escHtml(ins.insight_text))}</div>
-      <div class="evidence-pills">
-        ${(ins.evidence || []).map(e =>
-          `<span class="ev-pill"><i class="bi bi-person-badge" style="margin-right:4px"></i>${escHtml(e)}</span>`
-        ).join('')}
-      </div>
-    </div>`).join('');
+        <ul class="citations-list hidden">
+          ${citations.map(c => `<li><i class="bi bi-person-badge"></i>${escHtml(c)}</li>`).join('')}
+        </ul>
+      </div>` : ''}
+    </div>`;
+  }).join('');
 }
 
 /* ── Chat ── */
