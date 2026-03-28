@@ -51,11 +51,11 @@ def _fetch_pages(company, extra_params, num_pages):
             "app_id": ADZUNA_APP_ID,
             "app_key": ADZUNA_APP_KEY,
             "results_per_page": RESULTS_PER_PAGE,
-            "content-type": "application/json",
             **extra_params
         }
         try:
-            response = requests.get(base_url.format(page=page), params=params, timeout=60)
+            response = requests.get(base_url.format(page=page), params=params,
+                                    headers={"Content-Type": "application/json"}, timeout=60)
             response.raise_for_status()
             results = response.json().get('results', [])
             all_jobs.extend(results)
