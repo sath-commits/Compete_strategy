@@ -379,6 +379,49 @@
       .btn-send { padding: 8px 14px; font-size: 0.8rem; }
     }
 
+    /* ── Share bar ── */
+    .share-bar {
+      background: var(--white); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px 18px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; flex-wrap: wrap; margin-bottom: 20px;
+    }
+    .share-bar-label { font-size: 0.82rem; color: var(--text-2); font-weight: 500; }
+    .share-bar-label strong { color: var(--text); }
+    .share-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn-share {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: var(--cream); border: 1.5px solid var(--border);
+      border-radius: var(--pill); padding: 6px 13px;
+      font-family: 'Inter', sans-serif; font-size: 0.76rem;
+      font-weight: 600; color: var(--text); cursor: pointer; transition: all 0.15s;
+    }
+    .btn-share:hover { border-color: var(--black); background: var(--black); color: var(--white); }
+    .btn-share.x-twitter:hover { background: #000; border-color: #000; }
+    .btn-share.linkedin-btn:hover { background: #0077B5; border-color: #0077B5; }
+
+    /* Copy buttons on insight cards and chat messages */
+    .btn-copy-inline {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: transparent; border: 1px solid var(--border);
+      border-radius: 6px; padding: 3px 8px;
+      font-size: 0.7rem; color: var(--text-3); cursor: pointer;
+      transition: all 0.15s; font-family: 'Inter', sans-serif; font-weight: 500;
+      flex-shrink: 0;
+    }
+    .btn-copy-inline:hover { border-color: var(--black); color: var(--black); }
+    .msg-copy-btn { margin-top: 8px; margin-left: auto; display: flex; }
+
+    /* Toast notification */
+    #copy-toast {
+      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+      background: var(--black); color: var(--white);
+      padding: 10px 22px; border-radius: var(--pill);
+      font-size: 0.85rem; font-weight: 600;
+      opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 9999;
+    }
+    #copy-toast.show { opacity: 1; }
+
     /* Utilities */
     .hidden { display: none !important; }
     .spinner-sm { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; vertical-align: middle; }
@@ -487,6 +530,22 @@
       </div>
     </div>
 
+    <!-- Share bar -->
+    <div id="share-bar" class="share-bar hidden">
+      <span class="share-bar-label">Share analysis for <strong id="share-company-name"></strong></span>
+      <div class="share-btns">
+        <button class="btn-share x-twitter" onclick="shareTwitter()">
+          <i class="bi bi-twitter-x"></i> Post on X
+        </button>
+        <button class="btn-share linkedin-btn" onclick="shareLinkedIn()">
+          <i class="bi bi-linkedin"></i> Share on LinkedIn
+        </button>
+        <button class="btn-share" onclick="copyShareLink()">
+          <i class="bi bi-link-45deg"></i> Copy link
+        </button>
+      </div>
+    </div>
+
     <!-- ── Chat (above charts) ── -->
     <div id="chat-section" class="hidden" style="margin-bottom:24px">
       <h2 class="chat-heading">Ask a strategic question</h2>
@@ -571,41 +630,20 @@
   </div>
 </section>
 
-<!-- ── Roadmap ── -->
+<!-- ── What's next ── -->
 <section class="info-section dark" id="roadmap">
   <div class="container">
-    <p class="section-eyebrow">Product Roadmap</p>
-    <h2 class="section-heading" style="color:var(--white)">What's coming next</h2>
-    <p class="section-body">Read Between The Hires is actively being developed. Here is what is planned for the next phases.</p>
-    <div class="roadmap-grid">
-      <div class="roadmap-card">
-        <div class="roadmap-phase">Phase 2 · Q2 2026</div>
-        <div class="roadmap-title">Multi-company comparison</div>
-        <ul class="roadmap-items">
-          <li>Compare hiring signals across competitors side by side</li>
-          <li>Domain overlap heatmap</li>
-          <li>Leader board: who is hiring fastest in each domain</li>
-        </ul>
-      </div>
-      <div class="roadmap-card">
-        <div class="roadmap-phase">Phase 3 · Q3 2026</div>
-        <div class="roadmap-title">Trend tracking over time</div>
-        <ul class="roadmap-items">
-          <li>Weekly automated re-scans per company</li>
-          <li>Hiring velocity charts (month over month)</li>
-          <li>Email alerts when a competitor starts a new hiring wave</li>
-        </ul>
-      </div>
-      <div class="roadmap-card">
-        <div class="roadmap-phase">Phase 4 · Q4 2026</div>
-        <div class="roadmap-title">Enterprise features</div>
-        <ul class="roadmap-items">
-          <li>Team workspaces and saved watchlists</li>
-          <li>Exportable PDF intelligence reports</li>
-          <li>API access for integration into strategy tools</li>
-        </ul>
-      </div>
-    </div>
+    <p class="section-eyebrow">What could be added</p>
+    <h2 class="section-heading" style="color:var(--white)">Ideas for where this could go</h2>
+    <p class="section-body">This is a side project I built to learn and showcase what's possible with AI + hiring data. Here are some directions it could grow in:</p>
+    <ul style="margin-top:32px;list-style:none;display:flex;flex-direction:column;gap:12px;max-width:640px">
+      <li style="font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6"><span style="color:var(--lime);font-weight:700;margin-right:8px">→</span>Compare multiple companies side by side — see who's hiring fastest in each domain</li>
+      <li style="font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6"><span style="color:var(--lime);font-weight:700;margin-right:8px">→</span>Leaderboard: which companies are ramping up hiring the most right now</li>
+      <li style="font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6"><span style="color:var(--lime);font-weight:700;margin-right:8px">→</span>Hiring velocity charts — track how a company's hiring has shifted month over month</li>
+      <li style="font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6"><span style="color:var(--lime);font-weight:700;margin-right:8px">→</span>Surface relevant podcast episodes and news articles alongside the hiring signals</li>
+      <li style="font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6"><span style="color:var(--lime);font-weight:700;margin-right:8px">→</span>Weekly digest — email when a company you're tracking makes a big hiring move</li>
+      <li style="font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6"><span style="color:var(--lime);font-weight:700;margin-right:8px">→</span>Domain overlap heatmap across a whole competitive landscape</li>
+    </ul>
   </div>
 </section>
 
@@ -632,8 +670,10 @@
 <!-- ── Footer ── -->
 <footer class="footer">
   © 2026 Read Between The Hires · Built by Sathappan · All rights reserved
+  <div style="margin-top:8px;font-size:0.72rem;color:rgba(255,255,255,0.2)">This is a personal fun weekend project. It is not affiliated with, sponsored by, or endorsed by my employer in any way.</div>
 </footer>
 
+<div id="copy-toast"></div>
 <script src="/static/script.js"></script>
 </body>
 </html>

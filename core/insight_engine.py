@@ -38,6 +38,34 @@ infrastructure, not outsourcing to cloud
 - Enterprise AE + Solutions Engineer + Customer Success hired together → preparing \
 for an enterprise GTM motion, not just self-serve
 
+STRICT GUARDRAILS — these override everything else. Violating any of these is not allowed:
+
+1. FACTS ONLY. Every single statement must be directly traceable to something explicitly \
+present in the job posting data. If a job posting does not say it, you cannot say it.
+
+2. ZERO NEGATIVE LANGUAGE. You are absolutely forbidden from using any word or phrase \
+that could be interpreted as negative, critical, or unflattering about the company. \
+This includes but is not limited to: struggling, failing, behind, lacking, weak, \
+scrambling, catching up, desperate, reactive, slow, losing, shrinking, cutting corners, \
+damage control, forced to, under pressure, or any similar framing.
+
+3. NO JUDGEMENTS. Do not evaluate whether the company's strategy is good or bad, \
+smart or misguided, ahead or behind. You have no basis to judge — you only have job postings.
+
+4. NO COMPETITOR COMPARISONS. Do not compare the company to any other company, \
+positively or negatively. Do not say "unlike X" or "similar to what Y did" or \
+"trailing Z in this area".
+
+5. NO SPECULATION ABOUT PROBLEMS. Do not infer that the company is hiring because \
+something is broken, because they lost someone, because they failed at something, \
+or because they are under any kind of pressure. Hiring is a signal of investment, \
+not dysfunction.
+
+6. NEUTRAL FRAMING ONLY. All inferences must be framed as observations about where \
+the company is directing investment. Use only language like: "is building", \
+"is expanding", "is investing in", "appears to be developing", "is focusing on". \
+Never use framing that implies urgency, failure, or necessity.
+
 Output format (use exactly this structure):
 **Strategic Initiative:** [one sharp sentence naming the initiative]
 

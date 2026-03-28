@@ -4,6 +4,10 @@ let chatHistory = [];
 let domainChart = null;
 let seniorityChart = null;
 let loadingTimers = [];
+let currentInsights = [];
+
+/* Tell browser we manage scroll restoration ourselves */
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 
 /* ── Loading progress ── */
 const LOAD_STEPS = [
@@ -301,18 +305,31 @@ function finishAnalysis(company, data) {
   show('deep-scan-btn');
   el('chat-window').innerHTML = '';
 
-  const cacheNote = data.from_cache
-    ? ` Results loaded from cache — <strong>0 API calls used</strong>.`
-    : ` Fresh data fetched.`;
-
   appendBotMessage(
-    `Analyzed **${data.job_count} job postings** for **${company}**.${cacheNote} ` +
+    `Analyzed **${data.job_count} job postings** for **${company}**. ` +
     `Found signals across ${data.trends.domain_distribution.length} strategic domains. ` +
     `Ask me anything about their strategy.`,
     []
   );
 
   renderSuggestedQuestions(company);
+
+  /* ── Update URL so back-navigation restores this search ── */
+  const shareUrl = new URL(window.location);
+  shareUrl.searchParams.set('q', company);
+  history.pushState({ company }, '', shareUrl.toString());
+
+  /* ── Update and show share bar ── */
+  el('share-company-name').textContent = company;
+  show('share-bar');
+
+  /* ── Scroll: restore saved position or scroll to results ── */
+  const savedScroll = sessionStorage.getItem('rbth_scroll_' + company.toLowerCase());
+  if (savedScroll) {
+    setTimeout(() => window.scrollTo(0, parseInt(savedScroll, 10)), 150);
+  } else {
+    setTimeout(() => el('results-section').scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
+  }
 }
 
 function renderSuggestedQuestions(company) {
@@ -349,12 +366,7 @@ function renderResults(data) {
   el('stat-domains').textContent = trends.domain_distribution.length;
   el('stat-insights').textContent = insights.length;
 
-  // Cache badge
-  if (data.from_cache) {
-    el('cache-badge').classList.remove('hidden');
-  } else {
-    el('cache-badge').classList.add('hidden');
-  }
+  el('cache-badge').classList.add('hidden');
 
   renderDomainChart(trends.domain_distribution);
   renderSkills(trends.top_skills);
@@ -425,14 +437,20 @@ function renderSeniorityChart(seniority) {
 }
 
 function renderInsights(insights) {
+  currentInsights = insights || [];
   const container = el('insights-list');
   if (!insights || !insights.length) {
     container.innerHTML = '<p class="text-muted">Not enough data to generate insights. Try a larger company.</p>';
     return;
   }
-  container.innerHTML = insights.map(ins => `
+  container.innerHTML = insights.map((ins, i) => `
     <div class="insight-card">
-      <div class="domain-tag">${escHtml(ins.domain.replace(/_/g, ' '))}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div class="domain-tag" style="margin-bottom:0">${escHtml(ins.domain.replace(/_/g, ' '))}</div>
+        <button class="btn-copy-inline" onclick="copyInsight(${i})" title="Copy insight">
+          <i class="bi bi-copy"></i> Copy
+        </button>
+      </div>
       <div class="insight-text">${renderMarkdown(escHtml(ins.insight_text))}</div>
       <div class="evidence-pills">
         ${(ins.evidence || []).map(e =>
@@ -485,7 +503,10 @@ function appendBotMessage(text, evidence) {
   const win = el('chat-window');
   const div = document.createElement('div');
   div.className = 'msg-bubble msg-bot';
-  div.innerHTML = renderMarkdown(text);
+
+  const textDiv = document.createElement('div');
+  textDiv.innerHTML = renderMarkdown(text);
+  div.appendChild(textDiv);
 
   if (evidence && evidence.length) {
     const evDiv = document.createElement('div');
@@ -500,6 +521,20 @@ function appendBotMessage(text, evidence) {
       }).join('');
     div.appendChild(evDiv);
   }
+
+  /* Copy button */
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'btn-copy-inline msg-copy-btn';
+  copyBtn.innerHTML = '<i class="bi bi-copy"></i> Copy';
+  copyBtn.title = 'Copy this message';
+  copyBtn.onclick = () => {
+    const shareUrl = currentCompany ? getShareUrl(currentCompany) : window.location.href;
+    const shareText = currentCompany
+      ? `${text}\n\n— ${currentCompany} hiring analysis: ${shareUrl}`
+      : text;
+    copyToClipboard(shareText, 'Message copied!');
+  };
+  div.appendChild(copyBtn);
 
   win.appendChild(div);
   win.scrollTop = win.scrollHeight;
@@ -534,4 +569,91 @@ function renderMarkdown(text) {
   return text
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\n/g, '<br>');
+}
+
+/* ── Scroll position persistence ── */
+let _scrollSaveTimer = null;
+window.addEventListener('scroll', () => {
+  if (!currentCompany) return;
+  clearTimeout(_scrollSaveTimer);
+  _scrollSaveTimer = setTimeout(() => {
+    sessionStorage.setItem('rbth_scroll_' + currentCompany.toLowerCase(), String(window.scrollY));
+  }, 200);
+});
+
+/* Restore state from URL on page load */
+document.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const q = params.get('q');
+  if (q) {
+    el('company-input').value = q;
+    runAnalysis(q, false);
+  }
+});
+
+/* ── Social sharing ── */
+function getShareUrl(company) {
+  return window.location.origin + window.location.pathname + '?q=' + encodeURIComponent(company);
+}
+
+function shareTwitter() {
+  if (!currentCompany) return;
+  const url = getShareUrl(currentCompany);
+  const text = `🔍 I analyzed ${currentCompany}'s hiring data and uncovered their product strategy — before they've announced it.\n\nPowered by AI · Read Between The Hires`;
+  window.open(
+    `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
+    '_blank'
+  );
+}
+
+function shareLinkedIn() {
+  if (!currentCompany) return;
+  const url = getShareUrl(currentCompany);
+  window.open(
+    `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`,
+    '_blank'
+  );
+}
+
+function copyShareLink() {
+  if (!currentCompany) return;
+  copyToClipboard(getShareUrl(currentCompany), 'Link copied!');
+}
+
+function copyInsight(i) {
+  const ins = currentInsights[i];
+  if (!ins) return;
+  const url = getShareUrl(currentCompany);
+  const message =
+    `${ins.domain.replace(/_/g, ' ').toUpperCase()}\n\n${ins.insight_text}\n\n` +
+    `— ${currentCompany} hiring analysis · Read Between The Hires\n${url}`;
+  copyToClipboard(message, 'Insight copied!');
+}
+
+function copyToClipboard(text, successMsg) {
+  const done = () => showToast(successMsg || 'Copied!');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+
+function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); done(); } catch (_) {}
+  document.body.removeChild(ta);
+}
+
+let _toastTimer = null;
+function showToast(msg) {
+  const toast = el('copy-toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
 }
