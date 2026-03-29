@@ -335,7 +335,7 @@ function finishAnalysis(company, data) {
   /* ── Scroll: restore saved position or scroll to results ── */
   const savedScroll = sessionStorage.getItem('rbth_scroll_' + company.toLowerCase());
   if (savedScroll) {
-    setTimeout(() => window.scrollTo(0, parseInt(savedScroll, 10)), 150);
+    setTimeout(() => window.scrollTo(0, parseInt(savedScroll, 10)), 450);
   } else {
     setTimeout(() => el('results-section').scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
   }
@@ -410,11 +410,14 @@ function renderSkills(skills) {
 function renderSeniorityChart(seniority) {
   const ctx = el('seniority-chart').getContext('2d');
   if (seniorityChart) seniorityChart.destroy();
+  // Clear any previous fallback messages
+  ctx.canvas.parentNode.querySelectorAll('.seniority-fallback').forEach(n => n.remove());
   if (!seniority || !seniority.length) {
     ctx.canvas.style.display = 'none';
     const msg = document.createElement('p');
+    msg.className = 'seniority-fallback';
     msg.style.cssText = 'font-size:0.82rem;color:var(--text-3);margin-top:8px';
-    msg.textContent = 'Seniority data unavailable for this cached result. Use "Force fresh fetch" to reanalyse.';
+    msg.textContent = 'Seniority data unavailable. Try a fresh fetch to reanalyse.';
     ctx.canvas.parentNode.appendChild(msg);
     return;
   }
@@ -630,6 +633,14 @@ window.addEventListener('scroll', () => {
   _scrollSaveTimer = setTimeout(() => {
     sessionStorage.setItem('rbth_scroll_' + currentCompany.toLowerCase(), String(window.scrollY));
   }, 200);
+});
+
+/* Restore scroll when page is restored from bfcache (mobile back/forward) */
+window.addEventListener('pageshow', (e) => {
+  if (e.persisted && currentCompany) {
+    const saved = sessionStorage.getItem('rbth_scroll_' + currentCompany.toLowerCase());
+    if (saved) setTimeout(() => window.scrollTo(0, parseInt(saved, 10)), 100);
+  }
 });
 
 /* Restore state from URL on page load + keepalive ping */
