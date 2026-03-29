@@ -410,7 +410,15 @@ function renderSkills(skills) {
 function renderSeniorityChart(seniority) {
   const ctx = el('seniority-chart').getContext('2d');
   if (seniorityChart) seniorityChart.destroy();
-  if (!seniority || !seniority.length) return;
+  if (!seniority || !seniority.length) {
+    ctx.canvas.style.display = 'none';
+    const msg = document.createElement('p');
+    msg.style.cssText = 'font-size:0.82rem;color:var(--text-3);margin-top:8px';
+    msg.textContent = 'Seniority data unavailable for this cached result. Use "Force fresh fetch" to reanalyse.';
+    ctx.canvas.parentNode.appendChild(msg);
+    return;
+  }
+  ctx.canvas.style.display = '';
 
   const palette = ['#0A0A0A','#C5F135','#555555','#AAAAAA','#E2DDD4','#333','#888'];
   seniorityChart = new Chart(ctx, {

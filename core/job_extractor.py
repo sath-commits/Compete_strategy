@@ -33,7 +33,7 @@ Extract the following and return as a single JSON object:
   "company": "{company}",
   "title": "exact job title",
   "team": "team or department name if explicitly mentioned, else empty string",
-  "seniority": "one of: intern, junior, mid, senior, staff, principal, manager, director, vp — or empty string",
+  "seniority": "one of: intern, junior, mid, senior, staff, principal, manager, director, vp — infer from title keywords (e.g. 'Senior', 'Staff', 'Principal', 'Director', 'VP', 'Intern', 'Associate') OR from experience requirements (0-2 yrs → junior, 3-5 yrs → mid, 5+ yrs → senior). Use 'mid' as default if unclear but clearly not entry-level or leadership",
   "domain_tags": ["domains from taxonomy below — pick ALL that apply"],
   "skills": ["technical and soft skills required, max 12"],
   "responsibilities": ["key responsibilities, max 5, be specific not generic"],
