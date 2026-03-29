@@ -19,7 +19,8 @@ from db.db import (
     get_cached_jobs, get_cache_info,
     log_api_call, get_api_usage,
     log_page_view, log_search, get_dashboard_data,
-    get_all_jobs
+    get_all_jobs,
+    count_fresh_fetches_today, FRESH_FETCH_DAILY_LIMIT
 )
 from core.company_resolver import resolve_company, get_search_suggestions
 
@@ -184,6 +185,14 @@ def analyze():
                 'insights': insights,
                 'trends': trends,
             })
+
+    # ── Per-IP rate limit: 5 fresh fetches per 24 hours ───────────────────
+    fresh_today = count_fresh_fetches_today(ip)
+    if fresh_today >= FRESH_FETCH_DAILY_LIMIT:
+        remaining_hint = 'Come back tomorrow, or search a company already analysed — those are always instant and free.'
+        return jsonify({
+            'error': f"You've used all {FRESH_FETCH_DAILY_LIMIT} free analyses for today. {remaining_hint}"
+        }), 429
 
     # ── Circuit breaker ────────────────────────────────────────────────────
     usage = get_api_usage('adzuna')

@@ -221,6 +221,23 @@ def get_dashboard_data():
     }
 
 
+# ── Rate limiting ──────────────────────────────────────────────────────────────
+
+FRESH_FETCH_DAILY_LIMIT = 5
+
+def count_fresh_fetches_today(ip):
+    """Count successful fresh (non-cache) fetches by this IP in the last 24 hours."""
+    conn = get_conn()
+    cutoff = (datetime.now() - timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S')
+    count = conn.execute(
+        'SELECT COUNT(*) as n FROM searches '
+        'WHERE ip = ? AND from_cache = 0 AND success = 1 AND created_at >= ?',
+        (ip, cutoff)
+    ).fetchone()['n']
+    conn.close()
+    return count
+
+
 # ── API usage tracking ─────────────────────────────────────────────────────────
 
 def log_api_call(service, company='', call_type='search'):
