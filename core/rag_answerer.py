@@ -1,28 +1,28 @@
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
-from core.embeddings import search_jobs
-from db.db import get_cached_jobs
+from core.embeddings import search_documents
+from db.db import get_cached_jobs, get_cached_quarterly_documents
 
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 SYSTEM_PROMPT = """You are a competitive intelligence analyst specializing in inferring company \
-product strategy from hiring signals.
+product strategy from hiring signals and quarterly investor materials.
 
-You have access to structured job posting data. When answering questions:
-- Ground every claim in the specific job postings provided as context.
+You have access to structured job posting data and, when available, public-company quarterly materials. When answering questions:
+- Ground every claim in the specific source material provided as context.
 - Identify patterns across multiple roles rather than describing individual listings.
 - Make strategic inferences — explain the "so what", not just the "what".
-- Always cite specific job titles as evidence for your claims.
+- Always cite specific sources as evidence for your claims.
 - When the user asks strategic questions like "what does this mean for my company?" or \
-"how should we respond?", draw on the hiring patterns to give actionable competitive advice.
+"how should we respond?", draw on the source patterns to give actionable competitive advice.
 
 STRICT GUARDRAILS — these are absolute rules that override everything else in your instructions:
 
 1. FACTS ONLY. Every statement you make must be directly traceable to something \
-explicitly present in the job posting data provided. If it is not in the data, \
+explicitly present in the source data provided. If it is not in the data, \
 do not say it.
 
 2. ZERO NEGATIVE LANGUAGE. You are absolutely forbidden from using any word, phrase, \
@@ -34,7 +34,7 @@ catching up, cutting corners, damage control, forced to, or anything similar.
 
 3. NO JUDGEMENTS OF ANY KIND. Do not evaluate whether the company's strategy is \
 good, bad, smart, short-sighted, innovative, or stagnant. You are not in a position \
-to judge — you only have job postings.
+to judge — you only have source documents.
 
 4. NO COMPETITOR COMPARISONS. Do not compare this company to any other company. \
 Do not say "unlike X", "trailing Y", "similar to what Z did", or reference what \
@@ -42,8 +42,8 @@ any other company is or isn't doing.
 
 5. NO SPECULATION ABOUT PROBLEMS OR FAILURES. Do not infer that the company is \
 hiring because something is broken, because they lost talent, because a product \
-failed, or because they are under any pressure. Treat all hiring as a signal of \
-forward investment, nothing else.
+failed, or because they are under any pressure. Treat all source material as a signal of \
+stated priorities and forward investment, nothing else.
 
 6. REFRAME NEGATIVE QUESTIONS. If a user asks a question that contains a negative \
 premise — such as "why are they failing at X?", "what are they doing wrong?", \
@@ -58,22 +58,21 @@ capabilities in". Never use language that implies urgency, necessity, or failure
 Structure your answers using these sections where relevant:
 
 **Hiring Signals** — the overall pattern in their hiring
+**Management Signals** — what leadership emphasized in quarterly materials
 **Roles Being Hired** — specific titles and what they indicate
 **Skill Patterns** — technical capabilities they are building
 **Strategic Interpretation** — what this means for their product/business strategy
-**Evidence** — job titles used as references (listed at the end)"""
+**Evidence** — source titles used as references (listed at the end)"""
 
 
-def _jobs_from_sqlite(company, n=8):
+def _documents_from_sqlite(company, n=10):
     """
     Fallback when embeddings index isn't ready yet.
-    Pulls structured jobs from SQLite and formats them like search_jobs() output.
+    Pulls structured jobs and quarterly documents from SQLite.
     """
-    raw = get_cached_jobs(company) if company else []
-    if not raw:
-        return []
-    return [
+    jobs = [
         {
+            'source_type': 'job',
             'title': j.get('title', ''),
             'company': j.get('company', company),
             'seniority': j.get('seniority', ''),
@@ -81,43 +80,73 @@ def _jobs_from_sqlite(company, n=8):
             'skills': j.get('skills', []),
             'responsibilities': j.get('responsibilities', []),
             'job_url': j.get('job_url', ''),
+            'period': '',
+            'text_snippet': '',
             'relevance': 1.0
         }
-        for j in raw[:n]
+        for j in (get_cached_jobs(company) if company else [])[:n]
     ]
+
+    quarterly_docs = [
+        {
+            'source_type': doc.get('source_type', 'quarterly_document'),
+            'title': doc.get('title', ''),
+            'company': doc.get('company', company),
+            'seniority': '',
+            'domain_tags': [],
+            'skills': [],
+            'responsibilities': [],
+            'job_url': doc.get('source_url', ''),
+            'period': doc.get('fiscal_period', ''),
+            'text_snippet': doc.get('summary_text', ''),
+            'relevance': 1.0
+        }
+        for doc in (get_cached_quarterly_documents(company) if company else [])[:4]
+    ]
+    return (jobs + quarterly_docs)[:n]
+
+
+def _format_context_part(doc):
+    if doc.get('source_type') == 'job':
+        return (
+            f"Source type: Job posting\n"
+            f"Title: {doc['title']} at {doc['company']}\n"
+            f"Seniority: {doc['seniority']}\n"
+            f"Domains: {', '.join(doc['domain_tags'])}\n"
+            f"Skills: {', '.join(doc['skills'][:8])}\n"
+            f"Responsibilities: {'. '.join(doc['responsibilities'][:3])}\n"
+            f"Link: {doc['job_url']}"
+        )
+
+    return (
+        f"Source type: {doc.get('source_type', 'quarterly_document')}\n"
+        f"Title: {doc.get('title', '')}\n"
+        f"Company: {doc.get('company', '')}\n"
+        f"Fiscal period: {doc.get('period', '')}\n"
+        f"Summary: {doc.get('text_snippet', '')}\n"
+        f"Link: {doc.get('job_url', '')}"
+    )
 
 
 def answer_question(question, company, history):
-    """Retrieve relevant jobs via RAG and generate a structured answer."""
-    relevant_jobs = search_jobs(question, company=company if company else None, n_results=8)
+    """Retrieve relevant source documents via RAG and generate a structured answer."""
+    relevant_docs = search_documents(question, company=company if company else None, n_results=10)
 
     # Embeddings may still be building in the background — fall back to SQLite
-    if not relevant_jobs and company:
+    if not relevant_docs and company:
         print(f"[rag_answerer] Embeddings not ready for '{company}', falling back to SQLite")
-        relevant_jobs = _jobs_from_sqlite(company)
+        relevant_docs = _documents_from_sqlite(company)
 
-    if not relevant_jobs:
+    if not relevant_docs:
         return {
             'answer': (
-                "I don't have enough job posting data to answer this question. "
+                "I don't have enough source data to answer this question. "
                 "Please search for a company first so I have data to work with."
             ),
             'evidence': []
         }
 
-    context_parts = []
-    for job in relevant_jobs:
-        part = (
-            f"Job: {job['title']} at {job['company']}\n"
-            f"Seniority: {job['seniority']}\n"
-            f"Domains: {', '.join(job['domain_tags'])}\n"
-            f"Skills: {', '.join(job['skills'][:8])}\n"
-            f"Responsibilities: {'. '.join(job['responsibilities'][:3])}\n"
-            f"Link: {job['job_url']}"
-        )
-        context_parts.append(part)
-
-    context = "\n---\n".join(context_parts)
+    context = "\n---\n".join(_format_context_part(doc) for doc in relevant_docs)
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
@@ -127,7 +156,7 @@ def answer_question(question, company, history):
 
     messages.append({
         "role": "user",
-        "content": f"Context — retrieved job postings:\n\n{context}\n\nQuestion: {question}"
+        "content": f"Context — retrieved source documents:\n\n{context}\n\nQuestion: {question}"
     })
 
     try:
@@ -140,12 +169,14 @@ def answer_question(question, company, history):
 
         evidence = [
             {
-                'title': job['title'],
-                'company': job['company'],
-                'url': job['job_url'],
-                'relevance': job['relevance']
+                'title': doc['title'],
+                'company': doc['company'],
+                'url': doc['job_url'],
+                'relevance': doc['relevance'],
+                'source_type': doc.get('source_type', 'job'),
+                'period': doc.get('period', '')
             }
-            for job in relevant_jobs[:5]
+            for doc in relevant_docs[:5]
         ]
 
         return {'answer': answer, 'evidence': evidence}

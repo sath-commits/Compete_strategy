@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'intelligence.db')
 
 CACHE_TTL_DAYS = 7  # cached jobs are considered fresh for 7 days
+QUARTERLY_CACHE_TTL_DAYS = 30
 
 
 def get_conn():
@@ -42,6 +43,23 @@ def init_db():
             domain TEXT,
             insight_text TEXT,
             evidence TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS quarterly_documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company TEXT NOT NULL,
+            ticker TEXT,
+            cik TEXT,
+            fiscal_period TEXT,
+            fiscal_year INTEGER,
+            source_type TEXT NOT NULL,
+            title TEXT,
+            raw_text TEXT,
+            summary_text TEXT,
+            structured_signals TEXT,
+            source_url TEXT,
+            date_fetched TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -290,6 +308,18 @@ def get_cache_info(company):
     return None
 
 
+def get_cached_quarterly_documents(company):
+    cutoff = (datetime.now() - timedelta(days=QUARTERLY_CACHE_TTL_DAYS)).strftime('%Y-%m-%d')
+    conn = get_conn()
+    rows = conn.execute(
+        'SELECT * FROM quarterly_documents WHERE LOWER(company) = LOWER(?) AND date_fetched >= ? '
+        'ORDER BY fiscal_year DESC, fiscal_period DESC, created_at DESC',
+        (company, cutoff)
+    ).fetchall()
+    conn.close()
+    return [_parse_quarterly_row(dict(row)) for row in rows]
+
+
 # ── Jobs ───────────────────────────────────────────────────────────────────────
 
 def save_jobs(jobs):
@@ -324,12 +354,53 @@ def save_jobs(jobs):
     conn.close()
 
 
+def save_quarterly_documents(documents):
+    if not documents:
+        return
+
+    conn = get_conn()
+    today = datetime.now().strftime('%Y-%m-%d')
+    company = documents[0].get('company', '')
+    conn.execute('DELETE FROM quarterly_documents WHERE LOWER(company) = LOWER(?)', (company,))
+
+    for doc in documents:
+        conn.execute('''
+            INSERT INTO quarterly_documents (
+                company, ticker, cik, fiscal_period, fiscal_year, source_type, title,
+                raw_text, summary_text, structured_signals, source_url, date_fetched
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            doc.get('company', ''),
+            doc.get('ticker', ''),
+            doc.get('cik', ''),
+            doc.get('fiscal_period', ''),
+            doc.get('fiscal_year'),
+            doc.get('source_type', ''),
+            doc.get('title', ''),
+            doc.get('raw_text', ''),
+            doc.get('summary_text', ''),
+            json.dumps(doc.get('structured_signals', {})),
+            doc.get('source_url', ''),
+            today,
+        ))
+
+    conn.commit()
+    conn.close()
+
+
 def get_all_jobs():
     """Return every job in the DB — used to rebuild ChromaDB index after a cold start."""
     conn = get_conn()
     rows = conn.execute('SELECT * FROM jobs').fetchall()
     conn.close()
     return [_parse_job_row(dict(row)) for row in rows]
+
+
+def get_all_quarterly_documents():
+    conn = get_conn()
+    rows = conn.execute('SELECT * FROM quarterly_documents').fetchall()
+    conn.close()
+    return [_parse_quarterly_row(dict(row)) for row in rows]
 
 
 def get_jobs_by_company(company):
@@ -345,6 +416,11 @@ def _parse_job_row(row):
     for col in ['domain_tags', 'skills', 'responsibilities',
                 'metrics', 'tools_platforms', 'team_names', 'business_goals']:
         row[col] = json.loads(row.get(col) or '[]')
+    return row
+
+
+def _parse_quarterly_row(row):
+    row['structured_signals'] = json.loads(row.get('structured_signals') or '{}')
     return row
 
 

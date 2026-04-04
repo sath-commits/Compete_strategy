@@ -12,8 +12,8 @@ client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 MIN_JOBS_FOR_INSIGHT = 2
 
 CONSULTANT_SYSTEM_PROMPT = """You are a senior strategy consultant who specialises in \
-competitive intelligence. Your job is to read hiring signals and infer what a company \
-is actually building or prioritising — not to summarise job descriptions.
+competitive intelligence. Your job is to read source evidence and infer what a company \
+is actually building or prioritising — not to simply summarise raw documents.
 
 Your reasoning method:
 1. Look for PATTERNS across multiple roles, not individual job summaries.
@@ -41,7 +41,7 @@ for an enterprise GTM motion, not just self-serve
 STRICT GUARDRAILS — these override everything else. Violating any of these is not allowed:
 
 1. FACTS ONLY. Every single statement must be directly traceable to something explicitly \
-present in the job posting data. If a job posting does not say it, you cannot say it.
+present in the source data. If the source data does not say it, you cannot say it.
 
 2. ZERO NEGATIVE LANGUAGE. You are absolutely forbidden from using any word or phrase \
 that could be interpreted as negative, critical, or unflattering about the company. \
@@ -50,7 +50,7 @@ scrambling, catching up, desperate, reactive, slow, losing, shrinking, cutting c
 damage control, forced to, under pressure, or any similar framing.
 
 3. NO JUDGEMENTS. Do not evaluate whether the company's strategy is good or bad, \
-smart or misguided, ahead or behind. You have no basis to judge — you only have job postings.
+smart or misguided, ahead or behind. You have no basis to judge — you only have source data.
 
 4. NO COMPETITOR COMPARISONS. Do not compare the company to any other company, \
 positively or negatively. Do not say "unlike X" or "similar to what Y did" or \
@@ -112,7 +112,6 @@ def _serialize_jobs_for_prompt(domain_jobs):
 
 def _generate_single_insight(company, domain, domain_jobs):
     """Generate one domain insight. Runs in a thread pool."""
-    titles = [j.get('title', '') for j in domain_jobs]
     job_block = _serialize_jobs_for_prompt(domain_jobs)
 
     user_prompt = (
@@ -139,14 +138,94 @@ def _generate_single_insight(company, domain, domain_jobs):
             'company': company,
             'domain': domain,
             'insight_text': response.choices[0].message.content.strip(),
-            'evidence': titles
+            'evidence': [
+                {
+                    'title': job.get('title', ''),
+                    'url': job.get('job_url', ''),
+                    'source_type': 'job',
+                    'label': job.get('title', '')
+                }
+                for job in domain_jobs[:6]
+            ]
         }
     except Exception as e:
         print(f"[insight_engine] Error for domain '{domain}': {e}")
         return None
 
 
-def generate_insights(company, jobs):
+def _serialize_quarterly_docs_for_prompt(quarterly_docs):
+    lines = []
+    for i, doc in enumerate(quarterly_docs, 1):
+        lines.append(f"--- Investor Source {i}: {doc.get('title', 'Unknown')} ---")
+        if doc.get('source_type'):
+            lines.append(f"Source type: {doc['source_type']}")
+        if doc.get('fiscal_period'):
+            lines.append(f"Fiscal period: {doc['fiscal_period']}")
+        if doc.get('summary_text'):
+            lines.append(f"Summary: {doc['summary_text']}")
+        signals = doc.get('structured_signals') or {}
+        if signals.get('focus_areas'):
+            lines.append(f"Focus areas: {', '.join(signals['focus_areas'])}")
+        if signals.get('products_or_initiatives'):
+            lines.append(f"Products or initiatives: {', '.join(signals['products_or_initiatives'])}")
+        if signals.get('metrics'):
+            lines.append(f"Metrics/guidance: {', '.join(signals['metrics'])}")
+        if signals.get('management_priorities'):
+            lines.append(f"Management priorities: {', '.join(signals['management_priorities'])}")
+        if signals.get('qa_topics'):
+            lines.append(f"Q&A topics: {', '.join(signals['qa_topics'])}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _generate_management_insight(company, jobs, quarterly_docs):
+    if not quarterly_docs:
+        return None
+
+    quarterly_block = _serialize_quarterly_docs_for_prompt(quarterly_docs)
+    hiring_domains = sorted({tag for job in jobs for tag in job.get('domain_tags', [])})
+
+    user_prompt = (
+        f"Company: {company}\n"
+        f"Hiring domains observed: {', '.join(hiring_domains) if hiring_domains else 'None'}\n\n"
+        f"Investor materials:\n{quarterly_block}\n"
+        f"Using the same output format, write one mixed-source insight that explains the clearest "
+        f"management-priority signal visible in the quarterly materials. You may mention alignment "
+        f"with hiring patterns only if it is directly supported by the data.\n"
+        f"In the Evidence Chain, cite investor sources using labels like "
+        f"'Q4 2025 earnings call transcript' or 'Q4 2025 earnings release'."
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": CONSULTANT_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.2
+        )
+        evidence = [
+            {
+                'title': doc.get('title', ''),
+                'url': doc.get('source_url', ''),
+                'source_type': doc.get('source_type', ''),
+                'period': doc.get('fiscal_period', '')
+            }
+            for doc in quarterly_docs[:4]
+        ]
+        return {
+            'company': company,
+            'domain': 'management_signals',
+            'insight_text': response.choices[0].message.content.strip(),
+            'evidence': evidence
+        }
+    except Exception as e:
+        print(f"[insight_engine] Error generating management insight: {e}")
+        return None
+
+
+def generate_insights(company, jobs, quarterly_docs=None):
     """
     Group jobs by domain and generate consultant-style insights in parallel.
     All domain insights are generated simultaneously instead of sequentially.
@@ -172,6 +251,10 @@ def generate_insights(company, jobs):
             result = future.result()
             if result:
                 all_insights.append(result)
+
+    management_insight = _generate_management_insight(company, jobs, quarterly_docs or [])
+    if management_insight:
+        all_insights.insert(0, management_insight)
 
     if all_insights:
         save_insights(all_insights)

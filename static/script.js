@@ -5,6 +5,7 @@ let domainChart = null;
 let seniorityChart = null;
 let loadingTimers = [];
 let currentInsights = [];
+let currentSourceStatus = null;
 
 /* Tell browser we manage scroll restoration ourselves */
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
@@ -306,6 +307,7 @@ function finishAnalysis(company, data) {
   triedNames.add(company.toLowerCase());
   stopLoadingSteps();
   currentCompany = company;
+  currentSourceStatus = data.source_status || null;
   chatHistory = [];
 
   renderResults(data);
@@ -314,10 +316,14 @@ function finishAnalysis(company, data) {
   show('deep-scan-btn');
   el('chat-window').innerHTML = '';
 
+  const sourceMessage = currentSourceStatus?.mode === 'public_with_financials'
+    ? 'I also pulled in quarterly investor materials for added context.'
+    : 'This run is grounded in hiring signals only.';
+
   appendBotMessage(
     `Analyzed **${data.job_count} job postings** for **${company}**. ` +
     `Found signals across ${data.trends.domain_distribution.length} strategic domains. ` +
-    `Ask me anything about their strategy.`,
+    `${sourceMessage} Ask me anything about their strategy.`,
     []
   );
 
@@ -347,7 +353,9 @@ function renderSuggestedQuestions(company) {
     `What is ${company} building in the next 6–12 months?`,
     `If I compete with ${company}, what should I worry about?`,
     `What technical skills is ${company} prioritizing?`,
-    `How is ${company} approaching enterprise sales?`,
+    currentSourceStatus?.mode === 'public_with_financials'
+      ? `What did management emphasize in the latest earnings call?`
+      : `How is ${company} approaching enterprise sales?`,
   ];
 
   const wrap = document.createElement('div');
@@ -370,6 +378,7 @@ function renderSuggestedQuestions(company) {
 /* ── Render Results ── */
 function renderResults(data) {
   const { trends, insights } = data;
+  currentSourceStatus = data.source_status || null;
 
   el('stat-jobs').textContent = data.job_count;
   el('stat-domains').textContent = trends.domain_distribution.length;
@@ -381,6 +390,15 @@ function renderResults(data) {
   renderInsights(insights);
   renderSkills(trends.top_skills);
   renderSeniorityChart(trends.seniority_distribution);
+
+  const note = el('analysis-source-note');
+  if (currentSourceStatus && currentSourceStatus.message) {
+    note.textContent = currentSourceStatus.message;
+    note.classList.remove('hidden');
+  } else {
+    note.textContent = '';
+    note.classList.add('hidden');
+  }
 }
 
 function renderDomains(domains) {
@@ -466,8 +484,18 @@ function toggleCitations(btn) {
   btn.querySelector('i').className = opening ? 'bi bi-chevron-up' : 'bi bi-chevron-down';
   const n = list.children.length;
   btn.querySelector('.toggle-label').textContent = opening
-    ? 'Hide supporting roles'
-    : `${n} supporting role${n !== 1 ? 's' : ''}`;
+    ? 'Hide supporting sources'
+    : `${n} supporting source${n !== 1 ? 's' : ''}`;
+}
+
+function prettySourceType(sourceType) {
+  const labels = {
+    job: 'Job posting',
+    quarterly_filing: 'Quarterly filing',
+    earnings_release: 'Earnings release',
+    earnings_call_transcript: 'Earnings call transcript'
+  };
+  return labels[sourceType] || sourceType || 'Source';
 }
 
 function renderInsights(insights) {
@@ -482,7 +510,11 @@ function renderInsights(insights) {
     const domain  = ins.domain.replace(/_/g, ' ');
     const title   = initiative || domain.toUpperCase();
     const summary = soWhat    || ins.insight_text;
-    const n = citations.length;
+    const evidence = Array.isArray(ins.evidence) ? ins.evidence : [];
+    const displayEvidence = evidence.length
+      ? evidence
+      : citations.map(c => ({ title: c, label: c, source_type: 'job' }));
+    const n = displayEvidence.length;
     return `
     <div class="insight-card-v2">
       <div class="insight-card-top">
@@ -500,13 +532,21 @@ function renderInsights(insights) {
       <div class="insight-citations">
         <button class="citations-toggle" onclick="toggleCitations(this)">
           <i class="bi bi-chevron-down"></i>
-          <span class="toggle-label">${n} supporting role${n !== 1 ? 's' : ''}</span>
+          <span class="toggle-label">${n} supporting source${n !== 1 ? 's' : ''}</span>
         </button>
         <ul class="citations-list hidden">
-          ${citations.map(c => {
-            const roleTitle = c.split(':')[0].trim();
+          ${displayEvidence.map(item => {
+            const label = item.label || item.title || '';
+            if ((item.source_type || 'job') !== 'job') {
+              const sourceLabel = `${prettySourceType(item.source_type)}${item.period ? ' • ' + item.period : ''}`;
+              const content = `${label}${sourceLabel ? ' — ' + sourceLabel : ''}`;
+              return item.url
+                ? `<li><i class="bi bi-file-earmark-text"></i><a href="${escHtml(item.url)}" target="_blank" class="citation-link">${escHtml(content)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`
+                : `<li><i class="bi bi-file-earmark-text"></i><span class="citation-link" style="cursor:default">${escHtml(content)}</span></li>`;
+            }
+            const roleTitle = label.split(':')[0].trim();
             const searchUrl = `https://www.google.com/search?q=${encodeURIComponent('"' + roleTitle + '" ' + currentCompany + ' jobs')}`;
-            return `<li><i class="bi bi-person-badge"></i><a href="${escHtml(searchUrl)}" target="_blank" class="citation-link">${escHtml(c)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`;
+            return `<li><i class="bi bi-person-badge"></i><a href="${escHtml(searchUrl)}" target="_blank" class="citation-link">${escHtml(label)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`;
           }).join('')}
         </ul>
       </div>` : ''}
@@ -568,7 +608,9 @@ function appendBotMessage(text, evidence) {
     evDiv.innerHTML =
       '<div style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Evidence</div>' +
       evidence.map(e => {
-        const label = `<i class="bi bi-file-earmark-text me-1"></i>${escHtml(e.title)} — ${escHtml(e.company)}`;
+        const sourceLabel = prettySourceType(e.source_type || 'job');
+        const period = e.period ? ` • ${escHtml(e.period)}` : '';
+        const label = `<i class="bi bi-file-earmark-text me-1"></i>${escHtml(e.title)} — ${escHtml(sourceLabel)}${period}`;
         return e.url
           ? `<a href="${escHtml(e.url)}" target="_blank" class="evidence-link">${label} <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem"></i></a>`
           : `<span class="evidence-link" style="cursor:default">${label}</span>`;
