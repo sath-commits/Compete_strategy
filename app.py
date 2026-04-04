@@ -89,6 +89,11 @@ _jobs_lock = threading.Lock()
 
 def _make_source_status(company: str, public_company: dict, company_docs: list) -> dict:
     source_groups = sorted({doc.get('source_group', '') for doc in company_docs if doc.get('source_group')})
+    source_counts = {}
+    for doc in company_docs:
+        source_type = doc.get('source_type', '')
+        if source_type:
+            source_counts[source_type] = source_counts.get(source_type, 0) + 1
     has_investor_docs = 'investor_relations' in source_groups
 
     if company_docs:
@@ -109,6 +114,7 @@ def _make_source_status(company: str, public_company: dict, company_docs: list) 
             'ticker': public_company.get('ticker', ''),
             'doc_count': len(company_docs),
             'source_groups': source_groups,
+            'source_counts': source_counts,
             'message': (
                 "Insights combine hiring signals with official company materials"
                 + (f" for {public_company.get('ticker', '')}" if public_company.get('ticker') else "")
@@ -124,6 +130,7 @@ def _make_source_status(company: str, public_company: dict, company_docs: list) 
             'ticker': public_company.get('ticker', ''),
             'doc_count': 0,
             'source_groups': [],
+            'source_counts': {},
             'message': (
                 "This company appears to be public, but we could not retrieve official company materials right now. "
                 "Showing hiring-based insights only."
@@ -137,6 +144,7 @@ def _make_source_status(company: str, public_company: dict, company_docs: list) 
         'ticker': '',
         'doc_count': 0,
         'source_groups': [],
+        'source_counts': {},
         'message': (
             "No official public company materials were retrieved for this search. "
             "Showing hiring-based insights only."

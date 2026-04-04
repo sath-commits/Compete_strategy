@@ -7,6 +7,8 @@ let loadingTimers = [];
 let currentInsights = [];
 let currentSourceStatus = null;
 let loadingQuoteTimer = null;
+let loadingQuoteDeck = [];
+let sourceMixChart = null;
 
 /* Tell browser we manage scroll restoration ourselves */
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
@@ -27,6 +29,19 @@ const LOADING_QUOTES = [
   { text: '“Fortune favors the prepared mind.”', author: 'Louis Pasteur' },
   { text: '“The beginning is the most important part of the work.”', author: 'Plato' },
   { text: '“What is well conceived is clearly said.”', author: 'Boileau' },
+  { text: '“It is quality rather than quantity that matters.”', author: 'Seneca' },
+  { text: '“The more we do, the more we can do.”', author: 'William Hazlitt' },
+  { text: '“Energy and persistence conquer all things.”', author: 'Benjamin Franklin' },
+  { text: '“Great acts are made up of small deeds.”', author: 'Lao Tzu' },
+  { text: '“Diligence is the mother of good fortune.”', author: 'Benjamin Disraeli' },
+  { text: '“By failing to prepare, you are preparing to fail.”', author: 'Benjamin Franklin' },
+  { text: '“The secret of getting ahead is getting started.”', author: 'Mark Twain' },
+  { text: '“Action may not always bring happiness, but there is no happiness without action.”', author: 'William James' },
+  { text: '“Nothing will work unless you do.”', author: 'Maya Angelou' },
+  { text: '“The future depends on what you do today.”', author: 'Mahatma Gandhi' },
+  { text: '“A goal without a plan is just a wish.”', author: 'Antoine de Saint-Exupery' },
+  { text: '“He who is everywhere is nowhere.”', author: 'Seneca' },
+  { text: '“To choose time is to save time.”', author: 'Francis Bacon' },
 ];
 
 function startLoadingSteps(company) {
@@ -88,9 +103,20 @@ function startLoadingQuotes() {
   const quoteEl = el('loading-quote');
   if (!quoteEl) return;
 
+  loadingQuoteDeck = [...LOADING_QUOTES]
+    .map(q => ({ q, sort: Math.random() }))
+    .sort((a, b) => a.sort - b.sort)
+    .map(x => x.q);
   let idx = 0;
   const render = () => {
-    const q = LOADING_QUOTES[idx % LOADING_QUOTES.length];
+    if (idx >= loadingQuoteDeck.length) {
+      loadingQuoteDeck = [...LOADING_QUOTES]
+        .map(q => ({ q, sort: Math.random() }))
+        .sort((a, b) => a.sort - b.sort)
+        .map(x => x.q);
+      idx = 0;
+    }
+    const q = loadingQuoteDeck[idx];
     quoteEl.innerHTML = `<div style="font-style:italic">${q.text}</div><div style="margin-top:6px;font-size:0.8rem;letter-spacing:0.04em;text-transform:uppercase;opacity:0.72">— ${q.author}</div>`;
     idx += 1;
   };
@@ -351,11 +377,14 @@ function finishAnalysis(company, data) {
   const sourceMessage = currentSourceStatus?.mode === 'mixed_sources'
     ? 'I also pulled in official company materials for added context.'
     : 'This run is grounded in hiring signals only.';
+  const sourceCountText = currentSourceStatus?.doc_count
+    ? ` and **${currentSourceStatus.doc_count} official source documents**`
+    : '';
 
   appendBotMessage(
-    `Analyzed **${data.job_count} job postings** for **${company}**. ` +
+    `Analyzed **${data.job_count} job postings**${sourceCountText} for **${company}**. ` +
     `Found signals across ${data.trends.domain_distribution.length} strategic domains. ` +
-    `${sourceMessage} Ask me anything about their strategy.`,
+    `${sourceMessage} Ask me anything about their strategy, product direction, or competitive posture.`,
     []
   );
 
@@ -382,11 +411,11 @@ function finishAnalysis(company, data) {
 function renderSuggestedQuestions(company) {
   const win = el('chat-window');
   const chips = [
-    `What is ${company} building in the next 6–12 months?`,
-    `If I compete with ${company}, what should I worry about?`,
-    `What technical skills is ${company} prioritizing?`,
+    `What is ${company} most likely building in the next 2–4 quarters?`,
+    `Which signals matter most if I compete with ${company}?`,
+    `What technical and product capabilities is ${company} prioritizing?`,
     currentSourceStatus?.mode === 'mixed_sources'
-      ? `What do the official company materials say they are prioritizing?`
+      ? `How do the hiring and official signals reinforce each other?`
       : `How is ${company} approaching enterprise sales?`,
   ];
 
@@ -413,6 +442,7 @@ function renderResults(data) {
   currentSourceStatus = data.source_status || null;
 
   el('stat-jobs').textContent = data.job_count;
+  el('stat-sources').textContent = currentSourceStatus?.doc_count || 0;
   el('stat-domains').textContent = trends.domain_distribution.length;
   el('stat-insights').textContent = insights.length;
 
@@ -421,6 +451,7 @@ function renderResults(data) {
   renderDomains(trends.domain_distribution);
   renderInsights(insights);
   renderSkills(trends.top_skills);
+  renderSourceMix(currentSourceStatus?.source_counts || {});
   renderSeniorityChart(trends.seniority_distribution);
 
   const note = el('analysis-source-note');
@@ -431,6 +462,43 @@ function renderResults(data) {
     note.textContent = '';
     note.classList.add('hidden');
   }
+}
+
+function renderSourceMix(sourceCounts) {
+  const ctx = el('source-mix-chart').getContext('2d');
+  if (sourceMixChart) sourceMixChart.destroy();
+  ctx.canvas.parentNode.querySelectorAll('.source-mix-fallback').forEach(n => n.remove());
+
+  const entries = Object.entries(sourceCounts || {});
+  if (!entries.length) {
+    ctx.canvas.style.display = 'none';
+    const msg = document.createElement('p');
+    msg.className = 'source-mix-fallback';
+    msg.style.cssText = 'font-size:0.82rem;color:var(--text-3);margin-top:8px';
+    msg.textContent = 'No official source documents were added for this run.';
+    ctx.canvas.parentNode.appendChild(msg);
+    return;
+  }
+  ctx.canvas.style.display = '';
+
+  const palette = ['#111111', '#C5F135', '#8F8F8F', '#D8D0C3', '#5B5B5B', '#9FB4C9'];
+  sourceMixChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: entries.map(([key]) => prettySourceType(key)),
+      datasets: [{
+        data: entries.map(([, count]) => count),
+        backgroundColor: entries.map((_, i) => palette[i % palette.length]),
+        borderWidth: 2,
+        borderColor: '#FFFFFF'
+      }]
+    },
+    options: {
+      plugins: {
+        legend: { position: 'right', labels: { color: '#555', font: { size: 11 }, padding: 10 } }
+      }
+    }
+  });
 }
 
 function renderDomains(domains) {
@@ -533,6 +601,26 @@ function prettySourceType(sourceType) {
   return labels[sourceType] || sourceType || 'Source';
 }
 
+function getInsightSourceTone(evidence) {
+  const types = [...new Set((evidence || []).map(e => e.source_type || 'job'))];
+  if (!types.length || (types.length === 1 && types[0] === 'job')) {
+    return { label: 'Hiring Signal', style: 'background:#EEF1F4;color:#2E3A46' };
+  }
+  if (types.length > 1) {
+    return { label: 'Mixed Evidence', style: 'background:#ECE8FF;color:#4B3FA8' };
+  }
+
+  const labels = {
+    quarterly_filing: { label: 'Filing Signal', style: 'background:#E8F1FF;color:#2953A6' },
+    earnings_release: { label: 'Earnings Release', style: 'background:#FFF1E7;color:#A6531B' },
+    earnings_call_transcript: { label: 'Investor Call', style: 'background:#EAFBF0;color:#1E7A46' },
+    newsroom_post: { label: 'Newsroom Signal', style: 'background:#F4F0EA;color:#7A5A2A' },
+    changelog: { label: 'Release Notes', style: 'background:#FFF9E7;color:#8A6A00' },
+    github_release: { label: 'GitHub Signal', style: 'background:#EFEAFB;color:#5B3C9D' },
+  };
+  return labels[types[0]] || { label: 'Official Signal', style: 'background:#ECE8FF;color:#4B3FA8' };
+}
+
 function renderInsights(insights) {
   currentInsights = insights || [];
   const container = el('insights-list');
@@ -549,12 +637,14 @@ function renderInsights(insights) {
     const displayEvidence = evidence.length
       ? evidence
       : citations.map(c => ({ title: c, label: c, source_type: 'job' }));
+    const sourceTone = getInsightSourceTone(displayEvidence);
     const n = displayEvidence.length;
     return `
     <div class="insight-card-v2">
       <div class="insight-card-top">
         <div class="insight-main">
           <div class="insight-domain-meta"><i class="bi bi-diagram-3"></i>${escHtml(domain)}</div>
+          <div style="margin-top:10px"><span class="confidence-badge" style="font-size:0.74rem;${sourceTone.style}">${escHtml(sourceTone.label)}</span></div>
           <div class="insight-initiative">${escHtml(title)}</div>
           <div class="insight-so-what">${renderMarkdown(escHtml(summary))}</div>
         </div>

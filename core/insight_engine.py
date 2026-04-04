@@ -66,6 +66,9 @@ the company is directing investment. Use only language like: "is building", \
 "is expanding", "is investing in", "appears to be developing", "is focusing on". \
 Never use framing that implies urgency, failure, or necessity.
 
+7. NO PRECISE FORECASTING. Do not invent revenue numbers, growth rates, or precise financial projections. \
+If discussing future implications, keep them directional and limited to the next 2-4 quarters unless the source data explicitly provides guidance.
+
 Output format (use exactly this structure):
 **Strategic Initiative:** [one sharp sentence naming the initiative]
 

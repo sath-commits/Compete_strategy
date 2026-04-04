@@ -585,7 +585,11 @@
       <div class="stats-row">
         <div class="stat-card">
           <div class="stat-num" id="stat-jobs">—</div>
-          <div class="stat-lbl"><i class="bi bi-file-earmark-text"></i> Jobs Analyzed</div>
+          <div class="stat-lbl"><i class="bi bi-file-earmark-text"></i> Roles Analyzed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="stat-sources">—</div>
+          <div class="stat-lbl"><i class="bi bi-collection"></i> Official Sources</div>
         </div>
         <div class="stat-card">
           <div class="stat-num" id="stat-domains">—</div>
@@ -613,7 +617,7 @@
     <div class="container">
       <div class="res-block-header">
         <h2 class="res-block-title"><span class="ti"><i class="bi bi-diagram-3-fill"></i></span> Strategic Domains</h2>
-        <p class="res-block-sub">Where they're hiring — how the roles cluster across focus areas</p>
+        <p class="res-block-sub">Where the strongest signals cluster across hiring, filings, investor materials, and official product updates</p>
       </div>
       <div id="domains-pills" class="domains-pills"></div>
     </div>
@@ -630,17 +634,21 @@
     </div>
   </div>
 
-  <!-- 4. Hiring Breakdown -->
+  <!-- 4. Signal Breakdown -->
   <div class="res-block res-block--alt">
     <div class="container">
       <div class="res-block-header">
-        <h2 class="res-block-title"><span class="ti"><i class="bi bi-bar-chart-fill"></i></span> Hiring Breakdown</h2>
-        <p class="res-block-sub">How serious are they — and at what level are they building</p>
+        <h2 class="res-block-title"><span class="ti"><i class="bi bi-bar-chart-fill"></i></span> Signal Breakdown</h2>
+        <p class="res-block-sub">How the hiring signal looks, and which official sources are contributing evidence</p>
       </div>
       <div class="breakdown-grid">
         <div class="card">
           <div class="card-title"><i class="bi bi-code-slash"></i> Top Skills in Demand</div>
           <div id="skills-list"></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><i class="bi bi-collection-fill"></i> Source Mix</div>
+          <canvas id="source-mix-chart" height="220"></canvas>
         </div>
         <div class="card">
           <div class="card-title"><i class="bi bi-people-fill"></i> Seniority Mix</div>
@@ -655,13 +663,13 @@
     <div class="container">
       <div class="res-block-header">
         <h2 class="res-block-title"><span class="ti"><i class="bi bi-chat-dots-fill"></i></span> Dig Deeper</h2>
-        <p class="res-block-sub">Ask anything grounded in the jobs and official company materials we collected — what it means for your roadmap, your team, or how you compete</p>
+        <p class="res-block-sub">Ask anything grounded in the competitive signals we collected — jobs, filings, investor materials, release notes, and official source evidence</p>
       </div>
       <div class="chat-window" id="chat-window"></div>
       <div class="chat-input-row">
         <i class="bi bi-chat-dots" style="color:#AAAAAA;flex-shrink:0"></i>
         <input id="chat-input" class="chat-input" type="text"
-          placeholder="e.g. What should I be worried about? What are they likely building next?" />
+          placeholder="e.g. What do the earnings calls and hiring signals suggest they will prioritize next?" />
         <button class="btn-send" onclick="sendChat()">Send <i class="bi bi-arrow-right"></i></button>
       </div>
     </div>
@@ -693,7 +701,7 @@
         </div>
       </div>
       <p class="section-body" style="margin-top:20px">
-        Read Between The Hires combines those signals into one view. Enter any company name and get a structured read on what they are likely building, shipping, or prioritizing — backed by evidence from job data APIs and official company-owned materials when available.
+        Read Between The Hires combines those signals into one view. Enter any company name and get a structured read on what they are likely building, shipping, or prioritizing — backed by evidence from job data APIs, SEC filings, investor materials, official product updates, and official GitHub activity when available.
       </p>
       <p class="section-body" style="margin-top:12px;font-size:0.9rem;color:var(--text-3)">
         Guardrail: this project only uses job APIs, official SEC endpoints, and explicitly configured company-owned pages or official GitHub organizations. It does not crawl arbitrary third-party sites.
@@ -712,19 +720,19 @@
         <div class="step-num">1</div>
         <i class="bi bi-search step-card-icon"></i>
         <div class="step-title">Search any company</div>
-        <div class="step-desc">Type a company name. Read Between The Hires fetches recent job postings through job APIs, then checks official SEC, newsroom, changelog, and GitHub sources when they are clearly available.</div>
+        <div class="step-desc">Type a company name. Read Between The Hires starts with hiring data, then pulls in official SEC, investor, newsroom, release-note, and GitHub signals when they are clearly available and allowed.</div>
       </div>
       <div class="step-card">
         <div class="step-num">2</div>
         <i class="bi bi-graph-up-arrow step-card-icon"></i>
-        <div class="step-title">Read the signals</div>
-        <div class="step-desc">AI extracts tools, metrics, launches, team names, and management priorities from jobs and official company materials. Those patterns are grouped into strategic domains with source-backed insights.</div>
+        <div class="step-title">Read the signal mix</div>
+        <div class="step-desc">AI extracts tools, metrics, launches, team names, management priorities, and product direction from each source. Those patterns are grouped into strategic domains with source-backed insights.</div>
       </div>
       <div class="step-card">
         <div class="step-num">3</div>
         <i class="bi bi-chat-dots-fill step-card-icon"></i>
         <div class="step-title">Ask deeper questions</div>
-        <div class="step-desc">Use the chat panel to ask specific questions like "What did management emphasize most?" or "What do the hiring and release signals mean for my roadmap?"</div>
+        <div class="step-desc">Use the chat panel to ask specific questions like "What did management emphasize most?" or "How do the hiring and product signals change the competitive picture?"</div>
       </div>
     </div>
   </div>
@@ -735,31 +743,31 @@
   <div class="container">
     <p class="section-eyebrow"><i class="bi bi-compass"></i> What could be added</p>
     <h2 class="section-heading" style="color:var(--white)">Ideas for where this could go</h2>
-    <p class="section-body">This is a side project I built to learn and showcase what's possible with AI + public company signals. Here are some directions it could grow in:</p>
+    <p class="section-body">This is a side project I built to learn and showcase what's possible with AI + multi-source competitive signals. Here are some directions it could grow in:</p>
     <ul style="margin-top:32px;list-style:none;display:flex;flex-direction:column;gap:14px;max-width:640px">
       <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
         <i class="bi bi-arrow-left-right" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
-        Compare multiple companies side by side — see who's hiring fastest in each domain
+        Compare multiple companies side by side — see whose hiring, product, and investor signals line up most strongly in each domain
       </li>
       <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
         <i class="bi bi-trophy-fill" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
-        Leaderboard: which companies are ramping up hiring the most right now
+        Leaderboard: which companies are generating the strongest combined signal momentum right now
       </li>
       <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
         <i class="bi bi-graph-up" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
-        Hiring velocity charts — track how a company's hiring has shifted month over month
+        Signal velocity charts — track how a company's hiring, investor, and release signals shift quarter to quarter
       </li>
       <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
         <i class="bi bi-newspaper" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
-        Add more official source coverage across investor sites, release notes, and public documentation
+        Add more official source coverage across investor sites, release notes, public documentation, and owned content
       </li>
       <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
         <i class="bi bi-envelope-fill" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
-        Weekly digest — email when a company you're tracking posts a major hiring, investor, or release signal
+        Weekly digest — email when a company you're tracking posts a major hiring, investor, release, or GitHub signal
       </li>
       <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
         <i class="bi bi-grid-3x3-gap-fill" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
-        Domain overlap heatmap across a whole competitive landscape
+        Source overlap heatmap across a whole competitive landscape
       </li>
     </ul>
   </div>
@@ -772,7 +780,7 @@
     <h2 class="section-heading" style="color:var(--white)">Sathappan</h2>
     <p class="section-body">
       Product and strategy professional passionate about building tools that give teams an unfair competitive advantage.
-      Read Between The Hires was built as a personal project to solve a real problem: how do you track what competitors are building before they announce it?
+      Read Between The Hires was built as a personal project to solve a real problem: how do you track what competitors are building before they announce it, using only signals they publish or expose themselves?
     </p>
     <div class="contact-grid">
       <a class="contact-btn linkedin" href="https://www.linkedin.com/in/sathappan-sathappan" target="_blank">
