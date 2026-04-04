@@ -565,6 +565,7 @@
     <div id="loading-panel" class="hidden" style="max-width:540px;margin:24px auto 0">
       <div style="background:rgba(0,0,0,0.08);border-radius:16px;padding:24px">
         <div id="loading-steps" style="display:flex;flex-direction:column;gap:12px"></div>
+        <div id="loading-quote" style="margin-top:18px;padding-top:16px;border-top:1px solid rgba(0,0,0,0.08);color:rgba(0,0,0,0.58);font-size:0.92rem;line-height:1.6"></div>
       </div>
     </div>
 
@@ -623,7 +624,7 @@
     <div class="container">
       <div class="res-block-header">
         <h2 class="res-block-title"><span class="ti"><i class="bi bi-lightbulb-fill"></i></span> Strategic Insights</h2>
-        <p class="res-block-sub">What the hiring patterns reveal about their priorities and likely next moves</p>
+        <p class="res-block-sub">What hiring patterns and official company materials reveal about their priorities and likely next moves</p>
       </div>
       <div id="insights-list" class="insights-stack"></div>
     </div>
@@ -654,7 +655,7 @@
     <div class="container">
       <div class="res-block-header">
         <h2 class="res-block-title"><span class="ti"><i class="bi bi-chat-dots-fill"></i></span> Dig Deeper</h2>
-        <p class="res-block-sub">Ask anything grounded in these job postings — what it means for your roadmap, your team, or how you compete</p>
+        <p class="res-block-sub">Ask anything grounded in the jobs and official company materials we collected — what it means for your roadmap, your team, or how you compete</p>
       </div>
       <div class="chat-window" id="chat-window"></div>
       <div class="chat-input-row">
@@ -675,24 +676,27 @@
       <p class="section-eyebrow"><i class="bi bi-eye"></i> About Read Between The Hires</p>
       <h2 class="section-heading">Intelligence hidden in plain sight</h2>
       <p class="section-body">
-        Every time a company posts a job, they reveal something about where they are going.
+        Companies reveal strategy in more places than hiring alone.
       </p>
       <div style="margin-top:20px;display:flex;flex-direction:column;gap:12px;max-width:560px">
         <div style="display:flex;align-items:flex-start;gap:12px;font-size:0.9rem;color:var(--text-2);line-height:1.6">
           <i class="bi bi-phone" style="color:var(--black);font-size:1rem;flex-shrink:0;margin-top:2px"></i>
-          <span>A cluster of iOS engineers signals a mobile push.</span>
+          <span>A cluster of iOS engineers can signal a mobile push.</span>
         </div>
         <div style="display:flex;align-items:flex-start;gap:12px;font-size:0.9rem;color:var(--text-2);line-height:1.6">
           <i class="bi bi-cpu" style="color:var(--black);font-size:1rem;flex-shrink:0;margin-top:2px"></i>
-          <span>A wave of ML infrastructure roles signals they are building in-house models.</span>
+          <span>Official release notes and newsroom posts can show what they have already launched or announced.</span>
         </div>
         <div style="display:flex;align-items:flex-start;gap:12px;font-size:0.9rem;color:var(--text-2);line-height:1.6">
           <i class="bi bi-people" style="color:var(--black);font-size:1rem;flex-shrink:0;margin-top:2px"></i>
-          <span>Multiple roles mentioning the same internal team name signals that team is expanding fast.</span>
+          <span>Investor materials, when available, can show what management says matters most this quarter.</span>
         </div>
       </div>
       <p class="section-body" style="margin-top:20px">
-        Read Between The Hires reads those signals automatically. Enter any company name and get a structured view of what they are likely building — backed by evidence from their own job postings.
+        Read Between The Hires combines those signals into one view. Enter any company name and get a structured read on what they are likely building, shipping, or prioritizing — backed by evidence from job data APIs and official company-owned materials when available.
+      </p>
+      <p class="section-body" style="margin-top:12px;font-size:0.9rem;color:var(--text-3)">
+        Guardrail: this project only uses job APIs, official SEC endpoints, and explicitly configured company-owned pages or official GitHub organizations. It does not crawl arbitrary third-party sites.
       </p>
     </div>
   </div>
@@ -708,19 +712,19 @@
         <div class="step-num">1</div>
         <i class="bi bi-search step-card-icon"></i>
         <div class="step-title">Search any company</div>
-        <div class="step-desc">Type a company name. Read Between The Hires fetches their recent job postings from across the web — LinkedIn, Indeed, Glassdoor and more.</div>
+        <div class="step-desc">Type a company name. Read Between The Hires fetches recent job postings through job APIs, then checks official SEC, newsroom, changelog, and GitHub sources when they are clearly available.</div>
       </div>
       <div class="step-card">
         <div class="step-num">2</div>
         <i class="bi bi-graph-up-arrow step-card-icon"></i>
         <div class="step-title">Read the signals</div>
-        <div class="step-desc">AI extracts tools, metrics, team names and business goals from each posting. Hiring patterns are grouped into strategic domains with consultant-style insights.</div>
+        <div class="step-desc">AI extracts tools, metrics, launches, team names, and management priorities from jobs and official company materials. Those patterns are grouped into strategic domains with source-backed insights.</div>
       </div>
       <div class="step-card">
         <div class="step-num">3</div>
         <i class="bi bi-chat-dots-fill step-card-icon"></i>
         <div class="step-title">Ask deeper questions</div>
-        <div class="step-desc">Use the chat panel to ask specific questions: "How are they approaching enterprise sales?" or "What does this mean for my product roadmap?"</div>
+        <div class="step-desc">Use the chat panel to ask specific questions like "What did management emphasize most?" or "What do the hiring and release signals mean for my roadmap?"</div>
       </div>
     </div>
   </div>
@@ -731,7 +735,7 @@
   <div class="container">
     <p class="section-eyebrow"><i class="bi bi-compass"></i> What could be added</p>
     <h2 class="section-heading" style="color:var(--white)">Ideas for where this could go</h2>
-    <p class="section-body">This is a side project I built to learn and showcase what's possible with AI + hiring data. Here are some directions it could grow in:</p>
+    <p class="section-body">This is a side project I built to learn and showcase what's possible with AI + public company signals. Here are some directions it could grow in:</p>
     <ul style="margin-top:32px;list-style:none;display:flex;flex-direction:column;gap:14px;max-width:640px">
       <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
         <i class="bi bi-arrow-left-right" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
@@ -747,11 +751,11 @@
       </li>
       <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
         <i class="bi bi-newspaper" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
-        Surface relevant podcast episodes and news articles alongside the hiring signals
+        Add more official source coverage across investor sites, release notes, and public documentation
       </li>
       <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
         <i class="bi bi-envelope-fill" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
-        Weekly digest — email when a company you're tracking makes a big hiring move
+        Weekly digest — email when a company you're tracking posts a major hiring, investor, or release signal
       </li>
       <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
         <i class="bi bi-grid-3x3-gap-fill" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
@@ -785,6 +789,7 @@
 <footer class="footer">
   © 2026 Read Between The Hires · Built by Sathappan · All rights reserved
   <div style="margin-top:8px;font-size:0.72rem;color:rgba(255,255,255,0.2)">This is a personal fun weekend project. It is not affiliated with, sponsored by, or endorsed by my employer in any way.</div>
+  <div style="margin-top:6px;font-size:0.72rem;color:rgba(255,255,255,0.28)">Sources are limited to job APIs, official SEC data, and explicitly configured official company-owned pages or GitHub organizations.</div>
 </footer>
 
 <div id="copy-toast"></div>

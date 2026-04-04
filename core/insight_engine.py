@@ -153,14 +153,18 @@ def _generate_single_insight(company, domain, domain_jobs):
         return None
 
 
-def _serialize_quarterly_docs_for_prompt(quarterly_docs):
+def _serialize_company_docs_for_prompt(company_docs):
     lines = []
-    for i, doc in enumerate(quarterly_docs, 1):
-        lines.append(f"--- Investor Source {i}: {doc.get('title', 'Unknown')} ---")
+    for i, doc in enumerate(company_docs, 1):
+        lines.append(f"--- Official Source {i}: {doc.get('title', 'Unknown')} ---")
         if doc.get('source_type'):
             lines.append(f"Source type: {doc['source_type']}")
+        if doc.get('source_group'):
+            lines.append(f"Source group: {doc['source_group']}")
         if doc.get('fiscal_period'):
             lines.append(f"Fiscal period: {doc['fiscal_period']}")
+        if doc.get('published_at'):
+            lines.append(f"Published at: {doc['published_at']}")
         if doc.get('summary_text'):
             lines.append(f"Summary: {doc['summary_text']}")
         signals = doc.get('structured_signals') or {}
@@ -178,22 +182,21 @@ def _serialize_quarterly_docs_for_prompt(quarterly_docs):
     return "\n".join(lines)
 
 
-def _generate_management_insight(company, jobs, quarterly_docs):
-    if not quarterly_docs:
+def _generate_official_materials_insight(company, jobs, company_docs):
+    if not company_docs:
         return None
 
-    quarterly_block = _serialize_quarterly_docs_for_prompt(quarterly_docs)
+    docs_block = _serialize_company_docs_for_prompt(company_docs)
     hiring_domains = sorted({tag for job in jobs for tag in job.get('domain_tags', [])})
 
     user_prompt = (
         f"Company: {company}\n"
         f"Hiring domains observed: {', '.join(hiring_domains) if hiring_domains else 'None'}\n\n"
-        f"Investor materials:\n{quarterly_block}\n"
+        f"Official company materials:\n{docs_block}\n"
         f"Using the same output format, write one mixed-source insight that explains the clearest "
-        f"management-priority signal visible in the quarterly materials. You may mention alignment "
+        f"official-company signal visible in these materials. You may mention alignment "
         f"with hiring patterns only if it is directly supported by the data.\n"
-        f"In the Evidence Chain, cite investor sources using labels like "
-        f"'Q4 2025 earnings call transcript' or 'Q4 2025 earnings release'."
+        f"In the Evidence Chain, cite the official source titles directly."
     )
 
     try:
@@ -210,22 +213,22 @@ def _generate_management_insight(company, jobs, quarterly_docs):
                 'title': doc.get('title', ''),
                 'url': doc.get('source_url', ''),
                 'source_type': doc.get('source_type', ''),
-                'period': doc.get('fiscal_period', '')
+                'period': doc.get('fiscal_period', '') or doc.get('published_at', '')
             }
-            for doc in quarterly_docs[:4]
+            for doc in company_docs[:6]
         ]
         return {
             'company': company,
-            'domain': 'management_signals',
+            'domain': 'official_signals',
             'insight_text': response.choices[0].message.content.strip(),
             'evidence': evidence
         }
     except Exception as e:
-        print(f"[insight_engine] Error generating management insight: {e}")
+        print(f"[insight_engine] Error generating official materials insight: {e}")
         return None
 
 
-def generate_insights(company, jobs, quarterly_docs=None):
+def generate_insights(company, jobs, company_docs=None):
     """
     Group jobs by domain and generate consultant-style insights in parallel.
     All domain insights are generated simultaneously instead of sequentially.
@@ -252,9 +255,9 @@ def generate_insights(company, jobs, quarterly_docs=None):
             if result:
                 all_insights.append(result)
 
-    management_insight = _generate_management_insight(company, jobs, quarterly_docs or [])
-    if management_insight:
-        all_insights.insert(0, management_insight)
+    official_insight = _generate_official_materials_insight(company, jobs, company_docs or [])
+    if official_insight:
+        all_insights.insert(0, official_insight)
 
     if all_insights:
         save_insights(all_insights)

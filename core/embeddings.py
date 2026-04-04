@@ -81,7 +81,7 @@ def _embed_job(args):
         return None, None
 
 
-def _embed_quarterly_document(args):
+def _embed_company_document(args):
     i, doc = args
     text = (
         f"Source type: {doc.get('source_type', '')}\n"
@@ -105,7 +105,7 @@ def _embed_quarterly_document(args):
         return doc_id, {
             'embedding': embedding,
             'metadata': {
-                'source_type': doc.get('source_type', 'quarterly_document'),
+                'source_type': doc.get('source_type', 'company_document'),
                 'company': doc.get('company', ''),
                 'title': doc.get('title', ''),
                 'domain_tags': json.dumps([]),
@@ -119,7 +119,7 @@ def _embed_quarterly_document(args):
             }
         }
     except Exception as e:
-        print(f"[embeddings] Embed error for quarterly doc '{doc.get('title')}': {e}")
+        print(f"[embeddings] Embed error for company doc '{doc.get('title')}': {e}")
         return None, None
 
 
@@ -137,18 +137,22 @@ def add_jobs_to_index(jobs):
     print(f"[embeddings] Indexed {len(jobs)} jobs (total in index: {len(index)})")
 
 
-def add_quarterly_documents_to_index(documents):
+def add_company_documents_to_index(documents):
     index = _load_index()
 
     with ThreadPoolExecutor(max_workers=6) as executor:
-        futures = [executor.submit(_embed_quarterly_document, (i, doc)) for i, doc in enumerate(documents)]
+        futures = [executor.submit(_embed_company_document, (i, doc)) for i, doc in enumerate(documents)]
         for future in as_completed(futures):
             doc_id, entry = future.result()
             if doc_id:
                 index[doc_id] = entry
 
     _save_index(index)
-    print(f"[embeddings] Indexed {len(documents)} quarterly documents (total in index: {len(index)})")
+    print(f"[embeddings] Indexed {len(documents)} company documents (total in index: {len(index)})")
+
+
+def add_quarterly_documents_to_index(documents):
+    return add_company_documents_to_index(documents)
 
 
 def search_documents(query, company=None, n_results=8, source_types=None):

@@ -2,16 +2,16 @@ from openai import OpenAI
 import os
 from dotenv import load_dotenv
 from core.embeddings import search_documents
-from db.db import get_cached_jobs, get_cached_quarterly_documents
+from db.db import get_cached_jobs, get_cached_company_documents
 
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 SYSTEM_PROMPT = """You are a competitive intelligence analyst specializing in inferring company \
-product strategy from hiring signals and quarterly investor materials.
+product strategy from hiring signals and official company materials.
 
-You have access to structured job posting data and, when available, public-company quarterly materials. When answering questions:
+You have access to structured job posting data and, when available, official company materials such as filings, press releases, changelogs, and GitHub releases. When answering questions:
 - Ground every claim in the specific source material provided as context.
 - Identify patterns across multiple roles rather than describing individual listings.
 - Make strategic inferences — explain the "so what", not just the "what".
@@ -58,7 +58,7 @@ capabilities in". Never use language that implies urgency, necessity, or failure
 Structure your answers using these sections where relevant:
 
 **Hiring Signals** — the overall pattern in their hiring
-**Management Signals** — what leadership emphasized in quarterly materials
+**Official Signals** — what the company's official materials emphasize
 **Roles Being Hired** — specific titles and what they indicate
 **Skill Patterns** — technical capabilities they are building
 **Strategic Interpretation** — what this means for their product/business strategy
@@ -68,7 +68,7 @@ Structure your answers using these sections where relevant:
 def _documents_from_sqlite(company, n=10):
     """
     Fallback when embeddings index isn't ready yet.
-    Pulls structured jobs and quarterly documents from SQLite.
+    Pulls structured jobs and company documents from SQLite.
     """
     jobs = [
         {
@@ -87,9 +87,9 @@ def _documents_from_sqlite(company, n=10):
         for j in (get_cached_jobs(company) if company else [])[:n]
     ]
 
-    quarterly_docs = [
+    company_docs = [
         {
-            'source_type': doc.get('source_type', 'quarterly_document'),
+            'source_type': doc.get('source_type', 'company_document'),
             'title': doc.get('title', ''),
             'company': doc.get('company', company),
             'seniority': '',
@@ -101,9 +101,9 @@ def _documents_from_sqlite(company, n=10):
             'text_snippet': doc.get('summary_text', ''),
             'relevance': 1.0
         }
-        for doc in (get_cached_quarterly_documents(company) if company else [])[:4]
+        for doc in (get_cached_company_documents(company) if company else [])[:6]
     ]
-    return (jobs + quarterly_docs)[:n]
+    return (jobs + company_docs)[:n]
 
 
 def _format_context_part(doc):
@@ -119,7 +119,7 @@ def _format_context_part(doc):
         )
 
     return (
-        f"Source type: {doc.get('source_type', 'quarterly_document')}\n"
+        f"Source type: {doc.get('source_type', 'company_document')}\n"
         f"Title: {doc.get('title', '')}\n"
         f"Company: {doc.get('company', '')}\n"
         f"Fiscal period: {doc.get('period', '')}\n"

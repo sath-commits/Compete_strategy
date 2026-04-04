@@ -6,17 +6,27 @@ let seniorityChart = null;
 let loadingTimers = [];
 let currentInsights = [];
 let currentSourceStatus = null;
+let loadingQuoteTimer = null;
 
 /* Tell browser we manage scroll restoration ourselves */
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 
 /* ── Loading progress ── */
 const LOAD_STEPS = [
-  { icon: 'bi-search',         label: 'Fetching job postings',       detail: 'Searching across LinkedIn, Indeed, Glassdoor…',  delay: 0    },
-  { icon: 'bi-cpu',            label: 'Extracting structured data',  detail: 'Reading each job for tools, metrics, team names…', delay: 6000  },
-  { icon: 'bi-diagram-3',      label: 'Classifying strategy domains',detail: 'Tagging roles: mobile growth, AI infra, enterprise…', delay: 20000 },
-  { icon: 'bi-lightbulb',      label: 'Generating insights',         detail: 'Reasoning like a strategy consultant…',           delay: 50000 },
-  { icon: 'bi-bar-chart-line', label: 'Building trend analysis',     detail: 'Counting domains, skills, seniority levels…',     delay: 75000 },
+  { icon: 'bi-search',         label: 'Fetching job postings',         detail: 'Using job data APIs for current openings…', delay: 0 },
+  { icon: 'bi-building-check', label: 'Collecting official sources',   detail: 'Checking SEC filings, company newsrooms, changelogs, and official GitHub sources when available…', delay: 6000 },
+  { icon: 'bi-cpu',            label: 'Extracting structured signals', detail: 'Pulling tools, metrics, launches, and priorities from jobs and official company materials…', delay: 18000 },
+  { icon: 'bi-diagram-3',      label: 'Classifying strategy domains',  detail: 'Tagging signals across growth, AI infra, enterprise, and more…', delay: 36000 },
+  { icon: 'bi-lightbulb',      label: 'Generating insights',           detail: 'Combining hiring and official company signals into strategy insights…', delay: 54000 },
+  { icon: 'bi-bar-chart-line', label: 'Building analysis',             detail: 'Summarizing domains, skills, seniority, and source-backed evidence…', delay: 76000 },
+];
+
+const LOADING_QUOTES = [
+  { text: '“Know thyself, know thy enemy.”', author: 'Sun Tzu' },
+  { text: '“Well begun is half done.”', author: 'Aristotle' },
+  { text: '“Fortune favors the prepared mind.”', author: 'Louis Pasteur' },
+  { text: '“The beginning is the most important part of the work.”', author: 'Plato' },
+  { text: '“What is well conceived is clearly said.”', author: 'Boileau' },
 ];
 
 function startLoadingSteps(company) {
@@ -39,6 +49,8 @@ function startLoadingSteps(company) {
     const t = setTimeout(() => activateStep(i), s.delay);
     loadingTimers.push(t);
   });
+
+  startLoadingQuotes();
 }
 
 function activateStep(i) {
@@ -58,6 +70,10 @@ function activateStep(i) {
 function stopLoadingSteps() {
   loadingTimers.forEach(clearTimeout);
   loadingTimers = [];
+  if (loadingQuoteTimer) {
+    clearInterval(loadingQuoteTimer);
+    loadingQuoteTimer = null;
+  }
   hide('loading-panel');
   // Mark all as done cleanly
   LOAD_STEPS.forEach((_, i) => {
@@ -66,6 +82,22 @@ function stopLoadingSteps() {
     if (step) step.className = 'load-step done';
     if (icon) { icon.innerHTML = '<i class="bi bi-check-lg"></i>'; icon.className = 'step-icon done'; }
   });
+}
+
+function startLoadingQuotes() {
+  const quoteEl = el('loading-quote');
+  if (!quoteEl) return;
+
+  let idx = 0;
+  const render = () => {
+    const q = LOADING_QUOTES[idx % LOADING_QUOTES.length];
+    quoteEl.innerHTML = `<div style="font-style:italic">${q.text}</div><div style="margin-top:6px;font-size:0.8rem;letter-spacing:0.04em;text-transform:uppercase;opacity:0.72">— ${q.author}</div>`;
+    idx += 1;
+  };
+
+  render();
+  if (loadingQuoteTimer) clearInterval(loadingQuoteTimer);
+  loadingQuoteTimer = setInterval(render, 4500);
 }
 
 /* ── Helpers ── */
@@ -316,8 +348,8 @@ function finishAnalysis(company, data) {
   show('deep-scan-btn');
   el('chat-window').innerHTML = '';
 
-  const sourceMessage = currentSourceStatus?.mode === 'public_with_financials'
-    ? 'I also pulled in quarterly investor materials for added context.'
+  const sourceMessage = currentSourceStatus?.mode === 'mixed_sources'
+    ? 'I also pulled in official company materials for added context.'
     : 'This run is grounded in hiring signals only.';
 
   appendBotMessage(
@@ -353,8 +385,8 @@ function renderSuggestedQuestions(company) {
     `What is ${company} building in the next 6–12 months?`,
     `If I compete with ${company}, what should I worry about?`,
     `What technical skills is ${company} prioritizing?`,
-    currentSourceStatus?.mode === 'public_with_financials'
-      ? `What did management emphasize in the latest earnings call?`
+    currentSourceStatus?.mode === 'mixed_sources'
+      ? `What do the official company materials say they are prioritizing?`
       : `How is ${company} approaching enterprise sales?`,
   ];
 
@@ -493,7 +525,10 @@ function prettySourceType(sourceType) {
     job: 'Job posting',
     quarterly_filing: 'Quarterly filing',
     earnings_release: 'Earnings release',
-    earnings_call_transcript: 'Earnings call transcript'
+    earnings_call_transcript: 'Earnings call transcript',
+    newsroom_post: 'Newsroom post',
+    changelog: 'Release notes',
+    github_release: 'GitHub release'
   };
   return labels[sourceType] || sourceType || 'Source';
 }

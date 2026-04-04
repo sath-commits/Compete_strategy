@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'intelligence.db')
 
 CACHE_TTL_DAYS = 7  # cached jobs are considered fresh for 7 days
-QUARTERLY_CACHE_TTL_DAYS = 30
+COMPANY_DOC_CACHE_TTL_DAYS = 30
 
 
 def get_conn():
@@ -59,6 +59,26 @@ def init_db():
             summary_text TEXT,
             structured_signals TEXT,
             source_url TEXT,
+            date_fetched TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS company_documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company TEXT NOT NULL,
+            ticker TEXT,
+            cik TEXT,
+            fiscal_period TEXT,
+            fiscal_year INTEGER,
+            source_type TEXT NOT NULL,
+            source_group TEXT,
+            title TEXT,
+            raw_text TEXT,
+            summary_text TEXT,
+            structured_signals TEXT,
+            source_url TEXT,
+            published_at TEXT,
+            source_domain TEXT,
             date_fetched TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -308,16 +328,34 @@ def get_cache_info(company):
     return None
 
 
-def get_cached_quarterly_documents(company):
-    cutoff = (datetime.now() - timedelta(days=QUARTERLY_CACHE_TTL_DAYS)).strftime('%Y-%m-%d')
+def get_cached_company_documents(company):
+    cutoff = (datetime.now() - timedelta(days=COMPANY_DOC_CACHE_TTL_DAYS)).strftime('%Y-%m-%d')
     conn = get_conn()
     rows = conn.execute(
-        'SELECT * FROM quarterly_documents WHERE LOWER(company) = LOWER(?) AND date_fetched >= ? '
-        'ORDER BY fiscal_year DESC, fiscal_period DESC, created_at DESC',
+        'SELECT * FROM company_documents WHERE LOWER(company) = LOWER(?) AND date_fetched >= ? '
+        'ORDER BY COALESCE(published_at, "") DESC, fiscal_year DESC, fiscal_period DESC, created_at DESC',
         (company, cutoff)
     ).fetchall()
+    if not rows:
+        rows = conn.execute(
+            'SELECT * FROM quarterly_documents WHERE LOWER(company) = LOWER(?) AND date_fetched >= ? '
+            'ORDER BY fiscal_year DESC, fiscal_period DESC, created_at DESC',
+            (company, cutoff)
+        ).fetchall()
     conn.close()
-    return [_parse_quarterly_row(dict(row)) for row in rows]
+    parsed = [_parse_company_document_row(dict(row)) for row in rows]
+    for doc in parsed:
+        doc.setdefault('source_group', 'investor_relations')
+        doc.setdefault('published_at', '')
+        doc.setdefault('source_domain', '')
+    return parsed
+
+
+def get_cached_quarterly_documents(company):
+    return [
+        doc for doc in get_cached_company_documents(company)
+        if doc.get('source_group') == 'investor_relations'
+    ]
 
 
 # ── Jobs ───────────────────────────────────────────────────────────────────────
@@ -354,21 +392,22 @@ def save_jobs(jobs):
     conn.close()
 
 
-def save_quarterly_documents(documents):
+def save_company_documents(documents):
     if not documents:
         return
 
     conn = get_conn()
     today = datetime.now().strftime('%Y-%m-%d')
     company = documents[0].get('company', '')
-    conn.execute('DELETE FROM quarterly_documents WHERE LOWER(company) = LOWER(?)', (company,))
+    conn.execute('DELETE FROM company_documents WHERE LOWER(company) = LOWER(?)', (company,))
 
     for doc in documents:
         conn.execute('''
-            INSERT INTO quarterly_documents (
-                company, ticker, cik, fiscal_period, fiscal_year, source_type, title,
-                raw_text, summary_text, structured_signals, source_url, date_fetched
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO company_documents (
+                company, ticker, cik, fiscal_period, fiscal_year, source_type, source_group,
+                title, raw_text, summary_text, structured_signals, source_url, published_at,
+                source_domain, date_fetched
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             doc.get('company', ''),
             doc.get('ticker', ''),
@@ -376,16 +415,23 @@ def save_quarterly_documents(documents):
             doc.get('fiscal_period', ''),
             doc.get('fiscal_year'),
             doc.get('source_type', ''),
+            doc.get('source_group', ''),
             doc.get('title', ''),
             doc.get('raw_text', ''),
             doc.get('summary_text', ''),
             json.dumps(doc.get('structured_signals', {})),
             doc.get('source_url', ''),
+            doc.get('published_at', ''),
+            doc.get('source_domain', ''),
             today,
         ))
 
     conn.commit()
     conn.close()
+
+
+def save_quarterly_documents(documents):
+    return save_company_documents(documents)
 
 
 def get_all_jobs():
@@ -396,11 +442,25 @@ def get_all_jobs():
     return [_parse_job_row(dict(row)) for row in rows]
 
 
-def get_all_quarterly_documents():
+def get_all_company_documents():
     conn = get_conn()
-    rows = conn.execute('SELECT * FROM quarterly_documents').fetchall()
+    rows = conn.execute('SELECT * FROM company_documents').fetchall()
+    if not rows:
+        rows = conn.execute('SELECT * FROM quarterly_documents').fetchall()
     conn.close()
-    return [_parse_quarterly_row(dict(row)) for row in rows]
+    parsed = [_parse_company_document_row(dict(row)) for row in rows]
+    for doc in parsed:
+        doc.setdefault('source_group', 'investor_relations')
+        doc.setdefault('published_at', '')
+        doc.setdefault('source_domain', '')
+    return parsed
+
+
+def get_all_quarterly_documents():
+    return [
+        doc for doc in get_all_company_documents()
+        if doc.get('source_group') == 'investor_relations'
+    ]
 
 
 def get_jobs_by_company(company):
@@ -419,9 +479,13 @@ def _parse_job_row(row):
     return row
 
 
-def _parse_quarterly_row(row):
+def _parse_company_document_row(row):
     row['structured_signals'] = json.loads(row.get('structured_signals') or '{}')
     return row
+
+
+def _parse_quarterly_row(row):
+    return _parse_company_document_row(row)
 
 
 # ── Insights ───────────────────────────────────────────────────────────────────

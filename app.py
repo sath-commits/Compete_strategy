@@ -10,18 +10,18 @@ from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, render_template, request, jsonify, Response
 from core.job_fetcher import fetch_jobs
 from core.job_extractor import extract_and_classify_jobs
-from core.embeddings import add_jobs_to_index, add_quarterly_documents_to_index, get_index_count
+from core.embeddings import add_jobs_to_index, add_company_documents_to_index, get_index_count
 from core.insight_engine import generate_insights
 from core.trend_analyzer import compute_trends
 from core.rag_answerer import answer_question
 from core.public_company import resolve_public_company
-from core.quarterly_data import fetch_quarterly_documents
+from core.company_documents import fetch_company_documents
 from db.db import (
-    init_db, save_jobs, save_quarterly_documents,
+    init_db, save_jobs, save_company_documents,
     get_cached_jobs, get_cache_info,
     log_api_call, get_api_usage,
     log_page_view, log_search, get_dashboard_data,
-    get_all_jobs, get_all_quarterly_documents, get_cached_quarterly_documents,
+    get_all_jobs, get_all_company_documents, get_cached_company_documents,
     count_fresh_fetches_today, FRESH_FETCH_DAILY_LIMIT
 )
 from core.company_resolver import resolve_company, get_search_suggestions
@@ -45,15 +45,15 @@ def _rebuild_index_if_needed():
         count = get_index_count()
         if count == 0:
             all_jobs = get_all_jobs()
-            quarterly_docs = get_all_quarterly_documents()
-            if all_jobs or quarterly_docs:
+            company_docs = get_all_company_documents()
+            if all_jobs or company_docs:
                 print(
                     f"[startup] Embeddings index empty — rebuilding from "
-                    f"{len(all_jobs)} jobs and {len(quarterly_docs)} quarterly docs in SQLite"
+                    f"{len(all_jobs)} jobs and {len(company_docs)} company docs in SQLite"
                 )
                 add_jobs_to_index(all_jobs)
-                if quarterly_docs:
-                    add_quarterly_documents_to_index(quarterly_docs)
+                if company_docs:
+                    add_company_documents_to_index(company_docs)
             else:
                 print("[startup] Embeddings index empty, SQLite also empty — fresh start")
         else:
@@ -87,61 +87,76 @@ _jobs = {}
 _jobs_lock = threading.Lock()
 
 
-def _make_source_status(company: str, public_company: dict, quarterly_docs: list) -> dict:
-    if public_company.get('is_public'):
-        if quarterly_docs:
-            return {
-                'mode': 'public_with_financials',
-                'is_public': True,
-                'company': public_company.get('company', company),
-                'ticker': public_company.get('ticker', ''),
-                'doc_count': len(quarterly_docs),
-                'message': (
-                    f"Insights combine hiring signals with quarterly investor materials for "
-                    f"{public_company.get('ticker', '')}."
-                )
-            }
+def _make_source_status(company: str, public_company: dict, company_docs: list) -> dict:
+    source_groups = sorted({doc.get('source_group', '') for doc in company_docs if doc.get('source_group')})
+    has_investor_docs = 'investor_relations' in source_groups
+
+    if company_docs:
+        source_parts = []
+        if has_investor_docs:
+            source_parts.append('investor materials')
+        if 'official_news' in source_groups:
+            source_parts.append('newsroom posts')
+        if 'product_updates' in source_groups:
+            source_parts.append('product updates')
+        if 'github' in source_groups:
+            source_parts.append('GitHub releases')
+
         return {
-            'mode': 'public_no_financials_found',
+            'mode': 'mixed_sources',
+            'is_public': bool(public_company.get('is_public')),
+            'company': public_company.get('company', company) if public_company.get('is_public') else company,
+            'ticker': public_company.get('ticker', ''),
+            'doc_count': len(company_docs),
+            'source_groups': source_groups,
+            'message': (
+                "Insights combine hiring signals with official company materials"
+                + (f" for {public_company.get('ticker', '')}" if public_company.get('ticker') else "")
+                + (f", including {', '.join(source_parts)}." if source_parts else ".")
+            )
+        }
+
+    if public_company.get('is_public'):
+        return {
+            'mode': 'public_jobs_only',
             'is_public': True,
             'company': public_company.get('company', company),
             'ticker': public_company.get('ticker', ''),
             'doc_count': 0,
+            'source_groups': [],
             'message': (
-                "This company appears to be public, but quarterly investor materials were not "
-                "available right now. Showing hiring-based insights only."
+                "This company appears to be public, but we could not retrieve official company materials right now. "
+                "Showing hiring-based insights only."
             )
         }
 
     return {
-        'mode': 'private_or_unknown',
+        'mode': 'private_or_unknown_jobs_only',
         'is_public': False,
         'company': company,
         'ticker': '',
         'doc_count': 0,
+        'source_groups': [],
         'message': (
-            "Quarterly investor materials are typically available only for public companies. "
+            "No official public company materials were retrieved for this search. "
             "Showing hiring-based insights only."
         )
     }
 
 
-def _load_or_fetch_quarterly_docs(company: str, force_refresh: bool = False):
+def _load_or_fetch_company_docs(company: str, force_refresh: bool = False):
     public_company = resolve_public_company(company)
-    if not public_company.get('is_public'):
-        return public_company, []
-
     if not force_refresh:
-        cached_docs = get_cached_quarterly_documents(company)
+        cached_docs = get_cached_company_documents(company)
         if cached_docs:
             return public_company, cached_docs
 
-    quarterly_docs = fetch_quarterly_documents(public_company)
-    for doc in quarterly_docs:
+    company_docs = fetch_company_documents(company, public_company)
+    for doc in company_docs:
         doc['company'] = company
-    if quarterly_docs:
-        save_quarterly_documents(quarterly_docs)
-    return public_company, quarterly_docs
+    if company_docs:
+        save_company_documents(company_docs)
+    return public_company, company_docs
 
 
 def _run_analysis_job(job_id: str, company: str, ip: str):
@@ -173,22 +188,22 @@ def _run_analysis_job(job_id: str, company: str, ip: str):
             return
 
         save_jobs(structured_jobs)
-        public_company, quarterly_docs = _load_or_fetch_quarterly_docs(company, force_refresh=True)
-        source_status = _make_source_status(company, public_company, quarterly_docs)
+        public_company, company_docs = _load_or_fetch_company_docs(company, force_refresh=True)
+        source_status = _make_source_status(company, public_company, company_docs)
 
         # Embeddings are only needed for /chat — run them in the background
         # so they don't block insights/trends from completing.
         threading.Thread(
             target=add_jobs_to_index, args=(structured_jobs,), daemon=True
         ).start()
-        if quarterly_docs:
+        if company_docs:
             threading.Thread(
-                target=add_quarterly_documents_to_index, args=(quarterly_docs,), daemon=True
+                target=add_company_documents_to_index, args=(company_docs,), daemon=True
             ).start()
 
         # Insights and trends are independent — run them in parallel.
         with ThreadPoolExecutor(max_workers=2) as ex:
-            f_insights = ex.submit(generate_insights, company, structured_jobs, quarterly_docs)
+            f_insights = ex.submit(generate_insights, company, structured_jobs, company_docs)
             f_trends = ex.submit(compute_trends, company, structured_jobs)
             insights = f_insights.result()
             trends = f_trends.result()
@@ -248,16 +263,16 @@ def analyze():
         if structured_jobs:
             print(f"[app] Cache hit for '{company}' — {len(structured_jobs)} jobs")
             log_search(company, ip, from_cache=True, success=True)
-            public_company, quarterly_docs = _load_or_fetch_quarterly_docs(company, force_refresh=False)
-            source_status = _make_source_status(company, public_company, quarterly_docs)
+            public_company, company_docs = _load_or_fetch_company_docs(company, force_refresh=False)
+            source_status = _make_source_status(company, public_company, company_docs)
             threading.Thread(
                 target=add_jobs_to_index, args=(structured_jobs,), daemon=True
             ).start()
-            if quarterly_docs:
+            if company_docs:
                 threading.Thread(
-                    target=add_quarterly_documents_to_index, args=(quarterly_docs,), daemon=True
+                    target=add_company_documents_to_index, args=(company_docs,), daemon=True
                 ).start()
-            insights = generate_insights(company, structured_jobs, quarterly_docs)
+            insights = generate_insights(company, structured_jobs, company_docs)
             trends = compute_trends(company, structured_jobs)
             return jsonify({
                 'company': company,
