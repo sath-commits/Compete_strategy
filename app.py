@@ -169,34 +169,38 @@ def _load_or_fetch_company_docs(company: str, force_refresh: bool = False):
 
 def _run_analysis_job(job_id: str, company: str, ip: str):
     try:
-        raw_jobs = fetch_jobs(company)
+        with ThreadPoolExecutor(max_workers=2) as prefetch_executor:
+            jobs_future = prefetch_executor.submit(fetch_jobs, company)
+            docs_future = prefetch_executor.submit(_load_or_fetch_company_docs, company, True)
+            raw_jobs = jobs_future.result()
 
-        if not raw_jobs:
-            suggestions = get_search_suggestions(company)
-            log_search(company, ip, from_cache=False, success=False, error_type='no_results')
-            with _jobs_lock:
-                _jobs[job_id] = {
-                    'status': 'error',
-                    'error': f'No job postings found for "{company}".',
-                    'suggestions': suggestions
-                }
-            return
+            if not raw_jobs:
+                suggestions = get_search_suggestions(company)
+                log_search(company, ip, from_cache=False, success=False, error_type='no_results')
+                with _jobs_lock:
+                    _jobs[job_id] = {
+                        'status': 'error',
+                        'error': f'No job postings found for "{company}".',
+                        'suggestions': suggestions
+                    }
+                return
 
-        log_api_call('adzuna', company=company, call_type='search')
+            log_api_call('adzuna', company=company, call_type='search')
 
-        structured_jobs = extract_and_classify_jobs(raw_jobs, company)
-        if not structured_jobs:
-            log_search(company, ip, from_cache=False, success=False, error_type='extraction_failed')
-            with _jobs_lock:
-                _jobs[job_id] = {
-                    'status': 'error',
-                    'error': 'Could not extract job data. Please try again.',
-                    'suggestions': []
-                }
-            return
+            structured_jobs = extract_and_classify_jobs(raw_jobs, company)
+            if not structured_jobs:
+                log_search(company, ip, from_cache=False, success=False, error_type='extraction_failed')
+                with _jobs_lock:
+                    _jobs[job_id] = {
+                        'status': 'error',
+                        'error': 'Could not extract job data. Please try again.',
+                        'suggestions': []
+                    }
+                return
+
+            public_company, company_docs = docs_future.result()
 
         save_jobs(structured_jobs)
-        public_company, company_docs = _load_or_fetch_company_docs(company, force_refresh=True)
         source_status = _make_source_status(company, public_company, company_docs)
 
         # Embeddings are only needed for /chat — run them in the background

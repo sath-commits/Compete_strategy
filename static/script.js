@@ -9,6 +9,8 @@ let currentSourceStatus = null;
 let loadingQuoteTimer = null;
 let loadingQuoteDeck = [];
 let sourceMixChart = null;
+let loadingProgressTimer = null;
+let loadingStartedAt = 0;
 
 /* Tell browser we manage scroll restoration ourselves */
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
@@ -58,6 +60,8 @@ function startLoadingSteps(company) {
       </div>
     </div>`).join('');
   panel.classList.remove('hidden');
+  loadingStartedAt = Date.now();
+  startLoadingProgress();
 
   // Activate each step after its delay
   LOAD_STEPS.forEach((s, i) => {
@@ -89,6 +93,10 @@ function stopLoadingSteps() {
     clearInterval(loadingQuoteTimer);
     loadingQuoteTimer = null;
   }
+  if (loadingProgressTimer) {
+    clearInterval(loadingProgressTimer);
+    loadingProgressTimer = null;
+  }
   hide('loading-panel');
   // Mark all as done cleanly
   LOAD_STEPS.forEach((_, i) => {
@@ -97,6 +105,10 @@ function stopLoadingSteps() {
     if (step) step.className = 'load-step done';
     if (icon) { icon.innerHTML = '<i class="bi bi-check-lg"></i>'; icon.className = 'step-icon done'; }
   });
+  const progress = el('loading-progress-bar');
+  const elapsed = el('loading-elapsed');
+  if (progress) progress.style.width = '100%';
+  if (elapsed && loadingStartedAt) elapsed.textContent = `${Math.round((Date.now() - loadingStartedAt) / 1000)}s elapsed`;
 }
 
 function startLoadingQuotes() {
@@ -124,6 +136,29 @@ function startLoadingQuotes() {
   render();
   if (loadingQuoteTimer) clearInterval(loadingQuoteTimer);
   loadingQuoteTimer = setInterval(render, 4500);
+}
+
+function startLoadingProgress() {
+  const progress = el('loading-progress-bar');
+  const elapsed = el('loading-elapsed');
+  const estimate = el('loading-estimate');
+  if (!progress || !elapsed || !estimate) return;
+
+  const targetSeconds = 75;
+  estimate.textContent = 'Usually takes 30-75 seconds on a fresh run because jobs, official sources, and AI extraction run together.';
+  progress.style.width = '4%';
+  elapsed.textContent = '0s elapsed';
+
+  if (loadingProgressTimer) clearInterval(loadingProgressTimer);
+  loadingProgressTimer = setInterval(() => {
+    const elapsedSeconds = Math.round((Date.now() - loadingStartedAt) / 1000);
+    elapsed.textContent = `${elapsedSeconds}s elapsed`;
+    const pct = Math.min(95, 4 + Math.round((elapsedSeconds / targetSeconds) * 91));
+    progress.style.width = `${pct}%`;
+    if (elapsedSeconds > 75) {
+      estimate.textContent = 'This run is taking longer than usual because some source or AI calls are slower than normal.';
+    }
+  }, 500);
 }
 
 /* ── Helpers ── */

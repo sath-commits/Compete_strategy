@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from html import unescape
 from typing import List, Optional, Tuple
@@ -30,11 +31,12 @@ FMP_BASE_URL = "https://financialmodelingprep.com/stable"
 GITHUB_API_BASE = "https://api.github.com"
 
 MAX_RAW_TEXT_CHARS = 18000
-MAX_TOTAL_DOCS = 36
+MAX_TOTAL_DOCS = 12
 MAX_QUARTERLY_DOCS = 8
 MAX_NEWS_DOCS = 15
 MAX_CHANGELOG_DOCS = 10
 MAX_GITHUB_DOCS = 10
+MAX_SUMMARY_WORKERS = 6
 
 LEGAL_SOURCE_POLICY = {
     "jobs": "API only",
@@ -502,28 +504,39 @@ def fetch_company_documents(company: str, public_company: Optional[dict] = None)
     profile = get_company_profile(company, public_company)
 
     raw_docs = []
-    if public_company.get("is_public"):
-        raw_docs.extend(_fetch_sec_documents(company, public_company, max_docs=4))
-        raw_docs.extend(_fetch_transcript_documents(company, public_company, max_docs=4))
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = []
+        if public_company.get("is_public"):
+            futures.append(executor.submit(_fetch_sec_documents, company, public_company, 4))
+            futures.append(executor.submit(_fetch_transcript_documents, company, public_company, 4))
 
-    if ALLOW_OFFICIAL_PAGE_FETCH:
-        raw_docs.extend(_crawl_index_pages(
-            company=company,
-            pages=profile.get("news_pages", []),
-            source_type="newsroom_post",
-            source_group="official_news",
-            limit=MAX_NEWS_DOCS,
-            allowed_domains=profile.get("allowed_domains", []),
-        ))
-        raw_docs.extend(_crawl_index_pages(
-            company=company,
-            pages=profile.get("changelog_pages", []),
-            source_type="changelog",
-            source_group="product_updates",
-            limit=MAX_CHANGELOG_DOCS,
-            allowed_domains=profile.get("allowed_domains", []),
-        ))
-    raw_docs.extend(_fetch_github_documents(company, profile, limit=MAX_GITHUB_DOCS))
+        if ALLOW_OFFICIAL_PAGE_FETCH:
+            futures.append(executor.submit(
+                _crawl_index_pages,
+                company,
+                profile.get("news_pages", []),
+                "newsroom_post",
+                "official_news",
+                MAX_NEWS_DOCS,
+                profile.get("allowed_domains", []),
+            ))
+            futures.append(executor.submit(
+                _crawl_index_pages,
+                company,
+                profile.get("changelog_pages", []),
+                "changelog",
+                "product_updates",
+                MAX_CHANGELOG_DOCS,
+                profile.get("allowed_domains", []),
+            ))
+
+        futures.append(executor.submit(_fetch_github_documents, company, profile, MAX_GITHUB_DOCS))
+
+        for future in as_completed(futures):
+            try:
+                raw_docs.extend(future.result() or [])
+            except Exception as e:
+                print(f"[company_documents] Source fetch failed: {e}")
 
     normalized = []
     seen = set()
@@ -535,6 +548,13 @@ def fetch_company_documents(company: str, public_company: Optional[dict] = None)
         normalized.append(doc)
 
     normalized = normalized[:MAX_TOTAL_DOCS]
-    enriched = [_summarize_document(doc) for doc in normalized]
+    enriched = []
+    with ThreadPoolExecutor(max_workers=min(MAX_SUMMARY_WORKERS, max(1, len(normalized)))) as executor:
+        futures = [executor.submit(_summarize_document, doc) for doc in normalized]
+        for future in as_completed(futures):
+            try:
+                enriched.append(future.result())
+            except Exception as e:
+                print(f"[company_documents] Document summary failed: {e}")
     print(f"[company_documents] Collected {len(enriched)} documents for '{company}'")
     return enriched

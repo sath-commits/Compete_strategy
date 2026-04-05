@@ -564,6 +564,15 @@
     <!-- Loading progress panel -->
     <div id="loading-panel" class="hidden" style="max-width:540px;margin:24px auto 0">
       <div style="background:rgba(0,0,0,0.08);border-radius:16px;padding:24px">
+        <div style="margin-bottom:18px">
+          <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:8px">
+            <div id="loading-estimate" style="font-size:0.88rem;color:rgba(0,0,0,0.64)">Usually takes 30-75 seconds on a fresh run</div>
+            <div id="loading-elapsed" style="font-size:0.88rem;color:rgba(0,0,0,0.64)">0s elapsed</div>
+          </div>
+          <div style="height:10px;background:rgba(0,0,0,0.08);border-radius:999px;overflow:hidden">
+            <div id="loading-progress-bar" style="height:100%;width:4%;background:linear-gradient(90deg,#0A0A0A 0%, #C5F135 100%);transition:width 500ms ease"></div>
+          </div>
+        </div>
         <div id="loading-steps" style="display:flex;flex-direction:column;gap:12px"></div>
         <div id="loading-quote" style="margin-top:18px;padding-top:16px;border-top:1px solid rgba(0,0,0,0.08);color:rgba(0,0,0,0.58);font-size:0.92rem;line-height:1.6"></div>
       </div>
