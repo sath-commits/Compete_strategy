@@ -12,6 +12,7 @@ let sourceMixChart = null;
 let loadingProgressTimer = null;
 let loadingStartedAt = 0;
 let chartJsPromise = null;
+let currentFeaturedInsight = null;
 
 /* Tell browser we manage scroll restoration ourselves */
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
@@ -443,9 +444,11 @@ async function finishAnalysis(company, data) {
 
   await renderResults(data);
   show('results-section');
-  show('chat-section');
   show('deep-scan-btn');
   el('chat-window').innerHTML = '';
+  el('chat-company-name').textContent = company;
+  el('chat-chip-company').textContent = company;
+  el('chat-context-copy').textContent = `Grounded in ${data.job_count} analyzed roles${currentSourceStatus?.doc_count ? ` and ${currentSourceStatus.doc_count} official sources` : ''} for ${company}.`;
 
   const sourceMessage = currentSourceStatus?.mode === 'mixed_sources'
     ? 'I also pulled in official company materials for added context.'
@@ -529,7 +532,7 @@ async function renderResults(data) {
     console.error('Chart.js failed to load', err);
   }
 
-  renderDomains(trends.domain_distribution);
+  renderDomains(trends.domain_distribution, data.job_count);
   renderInsights(insights);
   renderSkills(trends.top_skills);
   if (chartsAvailable) {
@@ -602,13 +605,14 @@ function renderSourceMix(sourceCounts) {
   });
 }
 
-function renderDomains(domains) {
+function renderDomains(domains, totalJobs) {
   if (!domains || !domains.length) return;
   const max = Math.max(...domains.map(d => d.count));
   el('domains-pills').innerHTML = domains.map(d => `
     <div class="domain-pill">
       <div class="domain-pill-name">${escHtml(d.domain.replace(/_/g, ' '))}</div>
-      <div class="domain-pill-count">${d.count}<span class="domain-pill-unit"> roles</span></div>
+      <div class="domain-pill-count">${Math.max(1, Math.round((d.count / Math.max(totalJobs || 1, 1)) * 100))}<span class="domain-pill-unit">%</span></div>
+      <div class="domain-pill-sub">${d.count} roles</div>
       <div class="domain-pill-bar"><div class="domain-pill-fill" style="width:${Math.round((d.count/max)*100)}%"></div></div>
     </div>`).join('');
 }
@@ -724,12 +728,19 @@ function getInsightSourceTone(evidence) {
 
 function renderInsights(insights) {
   currentInsights = insights || [];
+  currentFeaturedInsight = insights && insights.length ? insights[0] : null;
+  renderFeaturedInsight(currentFeaturedInsight);
   const container = el('insights-list');
   if (!insights || !insights.length) {
     container.innerHTML = '<p style="color:var(--text-3);font-size:0.9rem">Not enough data to generate insights. Try a larger company.</p>';
     return;
   }
-  container.innerHTML = insights.map((ins, i) => {
+  const supportingInsights = insights.slice(1);
+  if (!supportingInsights.length) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = supportingInsights.map((ins, i) => {
     const { initiative, confidence, soWhat, citations } = parseInsight(ins.insight_text);
     const domain  = ins.domain.replace(/_/g, ' ');
     const title   = initiative || domain.toUpperCase();
@@ -751,7 +762,7 @@ function renderInsights(insights) {
         </div>
         <div class="insight-aside">
           <span class="confidence-badge conf-${confidence}">${confidence}</span>
-          <button class="btn-copy-inline" onclick="copyInsight(${i})" title="Copy insight"><i class="bi bi-copy"></i></button>
+          <button class="btn-copy-inline" onclick="copyInsight(${i + 1})" title="Copy insight"><i class="bi bi-copy"></i></button>
         </div>
       </div>
       ${n ? `
@@ -778,6 +789,64 @@ function renderInsights(insights) {
       </div>` : ''}
     </div>`;
   }).join('');
+}
+
+function renderFeaturedInsight(insight) {
+  const container = el('featured-insight');
+  if (!container) return;
+  if (!insight) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const { initiative, confidence, soWhat, citations } = parseInsight(insight.insight_text);
+  const domain = insight.domain.replace(/_/g, ' ');
+  const title = initiative || domain.toUpperCase();
+  const summary = soWhat || insight.insight_text;
+  const evidence = Array.isArray(insight.evidence) ? insight.evidence : [];
+  const displayEvidence = evidence.length
+    ? evidence
+    : citations.map(c => ({ title: c, label: c, source_type: 'job' }));
+  const sourceTone = getInsightSourceTone(displayEvidence);
+  const n = displayEvidence.length;
+
+  container.innerHTML = `
+    <div class="featured-insight-card">
+      <div class="featured-top">
+        <div>
+          <div class="featured-kicker"><i class="bi bi-stars"></i>${escHtml(domain)}</div>
+          <div style="margin-top:10px"><span class="confidence-badge" style="font-size:0.74rem;${sourceTone.style}">${escHtml(sourceTone.label)}</span></div>
+        </div>
+        <div class="featured-meta">
+          <span class="confidence-badge conf-${confidence}">${confidence}</span>
+          <button class="btn-copy-inline" onclick="copyInsight(0)" title="Copy insight"><i class="bi bi-copy"></i></button>
+        </div>
+      </div>
+      <div class="featured-title">${escHtml(title)}</div>
+      <div class="featured-summary">${renderMarkdown(escHtml(summary))}</div>
+      ${n ? `
+      <div class="insight-citations" style="margin-top:14px">
+        <button class="citations-toggle" onclick="toggleCitations(this)">
+          <i class="bi bi-chevron-down"></i>
+          <span class="toggle-label">${n} supporting source${n !== 1 ? 's' : ''}</span>
+        </button>
+        <ul class="citations-list hidden">
+          ${displayEvidence.map(item => {
+            const label = item.label || item.title || '';
+            if ((item.source_type || 'job') !== 'job') {
+              const sourceLabel = `${prettySourceType(item.source_type)}${item.period ? ' • ' + item.period : ''}`;
+              const content = `${label}${sourceLabel ? ' — ' + sourceLabel : ''}`;
+              return item.url
+                ? `<li><i class="bi bi-file-earmark-text"></i><a href="${escHtml(item.url)}" target="_blank" class="citation-link">${escHtml(content)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`
+                : `<li><i class="bi bi-file-earmark-text"></i><span class="citation-link" style="cursor:default">${escHtml(content)}</span></li>`;
+            }
+            const roleTitle = label.split(':')[0].trim();
+            const searchUrl = `https://www.google.com/search?q=${encodeURIComponent('"' + roleTitle + '" ' + currentCompany + ' jobs')}`;
+            return `<li><i class="bi bi-person-badge"></i><a href="${escHtml(searchUrl)}" target="_blank" class="citation-link">${escHtml(label)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`;
+          }).join('')}
+        </ul>
+      </div>` : ''}
+    </div>`;
 }
 
 /* ── Chat ── */
@@ -812,15 +881,27 @@ async function sendChat() {
 
 function appendUserMessage(text) {
   const win = el('chat-window');
+  const row = document.createElement('div');
+  row.className = 'msg-row msg-row-user';
+  const meta = document.createElement('div');
+  meta.className = 'msg-meta';
+  meta.textContent = 'You';
   const div = document.createElement('div');
   div.className = 'msg-bubble msg-user';
   div.textContent = text;
-  win.appendChild(div);
+  row.appendChild(meta);
+  row.appendChild(div);
+  win.appendChild(row);
   win.scrollTop = win.scrollHeight;
 }
 
 function appendBotMessage(text, evidence) {
   const win = el('chat-window');
+  const row = document.createElement('div');
+  row.className = 'msg-row msg-row-bot';
+  const meta = document.createElement('div');
+  meta.className = 'msg-meta';
+  meta.textContent = `${currentCompany || 'Company'} signal analyst`;
   const div = document.createElement('div');
   div.className = 'msg-bubble msg-bot';
 
@@ -858,18 +939,27 @@ function appendBotMessage(text, evidence) {
   };
   div.appendChild(copyBtn);
 
-  win.appendChild(div);
+  row.appendChild(meta);
+  row.appendChild(div);
+  win.appendChild(row);
   win.scrollTop = win.scrollHeight;
 }
 
 function appendTypingIndicator() {
   const win = el('chat-window');
   const id = 'typing-' + Date.now();
+  const row = document.createElement('div');
+  row.className = 'msg-row msg-row-bot';
+  row.id = id;
+  const meta = document.createElement('div');
+  meta.className = 'msg-meta';
+  meta.textContent = `${currentCompany || 'Company'} signal analyst`;
   const div = document.createElement('div');
-  div.id = id;
   div.className = 'msg-bubble msg-bot typing-indicator';
   div.innerHTML = '<span></span><span></span><span></span>';
-  win.appendChild(div);
+  row.appendChild(meta);
+  row.appendChild(div);
+  win.appendChild(row);
   win.scrollTop = win.scrollHeight;
   return id;
 }
