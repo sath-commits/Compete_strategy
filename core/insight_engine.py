@@ -2,14 +2,34 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai import OpenAI
 import os
+import re
 from dotenv import load_dotenv
 from db.db import save_insights
 
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+DOMAIN_INSIGHT_MODEL = os.getenv('DOMAIN_INSIGHT_MODEL', 'gpt-4o-mini')
+FINAL_SYNTHESIS_MODEL = os.getenv('FINAL_SYNTHESIS_MODEL', 'gpt-5-mini')
 
 MIN_JOBS_FOR_INSIGHT = 2
+MAX_DOMAIN_INSIGHTS = int(os.getenv('MAX_DOMAIN_INSIGHTS', '5'))
+
+SOURCE_PRIORITY = {
+    'earnings_call_transcript': 100,
+    'shareholder_letter': 98,
+    'investor_day': 96,
+    'quarterly_filing': 90,
+    'earnings_release': 88,
+    'job': 80,
+    'pricing_page': 74,
+    'product_doc': 72,
+    'changelog': 70,
+    'github_release': 68,
+    'customer_story': 64,
+    'partner_page': 62,
+    'newsroom_post': 50,
+}
 
 CONSULTANT_SYSTEM_PROMPT = """You are a senior strategy consultant who specialises in \
 competitive intelligence. Your job is to read source evidence and infer what a company \
@@ -130,7 +150,7 @@ def _generate_single_insight(company, domain, domain_jobs):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=DOMAIN_INSIGHT_MODEL,
             messages=[
                 {"role": "system", "content": CONSULTANT_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt}
@@ -189,7 +209,8 @@ def _generate_official_materials_insight(company, jobs, company_docs):
     if not company_docs:
         return None
 
-    docs_block = _serialize_company_docs_for_prompt(company_docs)
+    top_docs = _pick_top_documents(company_docs, limit=6)
+    docs_block = _serialize_company_docs_for_prompt(top_docs)
     hiring_domains = sorted({tag for job in jobs for tag in job.get('domain_tags', [])})
 
     user_prompt = (
@@ -204,7 +225,7 @@ def _generate_official_materials_insight(company, jobs, company_docs):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=DOMAIN_INSIGHT_MODEL,
             messages=[
                 {"role": "system", "content": CONSULTANT_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt}
@@ -218,7 +239,7 @@ def _generate_official_materials_insight(company, jobs, company_docs):
                 'source_type': doc.get('source_type', ''),
                 'period': doc.get('fiscal_period', '') or doc.get('published_at', '')
             }
-            for doc in company_docs[:6]
+            for doc in top_docs
         ]
         return {
             'company': company,
@@ -228,6 +249,150 @@ def _generate_official_materials_insight(company, jobs, company_docs):
         }
     except Exception as e:
         print(f"[insight_engine] Error generating official materials insight: {e}")
+        return None
+
+
+def _clean_text(value):
+    return re.sub(r'\s+', ' ', str(value or '').strip())
+
+
+def _pick_top_documents(company_docs, limit=6):
+    ranked = sorted(
+        company_docs,
+        key=lambda doc: (
+            SOURCE_PRIORITY.get(doc.get('source_type', ''), 10),
+            _clean_text(doc.get('published_at') or doc.get('fiscal_period') or ''),
+        ),
+        reverse=True
+    )
+    return ranked[:limit]
+
+
+def _summarize_job_patterns(jobs):
+    domain_counts = defaultdict(int)
+    tool_counts = defaultdict(int)
+    metric_counts = defaultdict(int)
+    team_counts = defaultdict(int)
+
+    for job in jobs:
+        for domain in job.get('domain_tags', []):
+            domain_counts[domain] += 1
+        for tool in job.get('tools_platforms', []):
+            tool_counts[tool] += 1
+        for metric in job.get('metrics', []):
+            metric_counts[metric] += 1
+        for team_name in job.get('team_names', []):
+            team_counts[team_name] += 1
+
+    lines = []
+    top_domains = sorted(domain_counts.items(), key=lambda item: (-item[1], item[0]))[:6]
+    if top_domains:
+        lines.append("Hiring domain concentration:")
+        for domain, count in top_domains:
+            lines.append(f"- {domain.replace('_', ' ')}: {count} roles")
+
+    for heading, counter in (
+        ("Repeated tools/platforms", tool_counts),
+        ("Repeated metrics", metric_counts),
+        ("Repeated internal team names", team_counts),
+    ):
+        items = sorted(counter.items(), key=lambda item: (-item[1], item[0]))[:6]
+        if items:
+            lines.append(f"{heading}:")
+            for label, count in items:
+                lines.append(f"- {label}: {count} mentions")
+
+    lines.append("Representative roles:")
+    for job in jobs[:6]:
+        signals = []
+        if job.get('team'):
+            signals.append(f"team={job['team']}")
+        if job.get('tools_platforms'):
+            signals.append(f"tools={', '.join(job['tools_platforms'][:3])}")
+        if job.get('metrics'):
+            signals.append(f"metrics={', '.join(job['metrics'][:2])}")
+        if job.get('business_goals'):
+            signals.append(f"goals={'; '.join(job['business_goals'][:2])}")
+        signal_text = f" ({'; '.join(signals)})" if signals else ""
+        lines.append(f"- {job.get('title', 'Unknown role')}{signal_text}")
+    return "\n".join(lines)
+
+
+def _summarize_official_patterns(company_docs):
+    docs = _pick_top_documents(company_docs, limit=6)
+    lines = []
+    for doc in docs:
+        label = doc.get('fiscal_period') or doc.get('published_at') or ''
+        lines.append(
+            f"- {doc.get('title', 'Unknown source')} [{doc.get('source_type', 'official')}]{f' ({label})' if label else ''}"
+        )
+        signals = doc.get('structured_signals') or {}
+        for field in ('management_priorities', 'products_or_initiatives', 'focus_areas', 'metrics', 'qa_topics'):
+            values = signals.get(field) or []
+            if values:
+                lines.append(f"  {field}: {', '.join(values[:4])}")
+        if doc.get('summary_text'):
+            lines.append(f"  summary: {_clean_text(doc.get('summary_text'))[:280]}")
+    return "\n".join(lines)
+
+
+def _generate_final_strategy_readout(company, jobs, company_docs):
+    docs = _pick_top_documents(company_docs, limit=6)
+    source_hierarchy = (
+        "earnings call / shareholder letter / investor day > "
+        "10-Q / 10-K / 8-K > jobs > product docs / changelog / pricing > "
+        "customer stories / partner pages > newsroom posts"
+    )
+    user_prompt = (
+        f"Company: {company}\n"
+        f"Source hierarchy to respect: {source_hierarchy}\n\n"
+        f"Structured hiring patterns:\n{_summarize_job_patterns(jobs)}\n\n"
+        f"Official company patterns:\n{_summarize_official_patterns(docs)}\n\n"
+        "Write one top-level strategic readout that synthesizes the strongest signals across all sources.\n"
+        "Rules:\n"
+        "- Respect the source hierarchy above when signals conflict.\n"
+        "- Jobs are more important than product docs, changelogs, pricing pages, customer stories, partner pages, and newsroom posts.\n"
+        "- Prefer repeated management commentary from earnings calls and filings over lighter-weight sources.\n"
+        "- If hiring confirms a management signal, say so explicitly.\n"
+        "- If official sources are sparse, still use the hierarchy rather than treating all sources equally.\n"
+        "- Use the exact output format from the system prompt.\n"
+        "- In the evidence chain, cite both official sources and representative roles where relevant."
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=FINAL_SYNTHESIS_MODEL,
+            messages=[
+                {"role": "system", "content": CONSULTANT_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.15
+        )
+        evidence = [
+            {
+                'title': doc.get('title', ''),
+                'url': doc.get('source_url', ''),
+                'source_type': doc.get('source_type', ''),
+                'period': doc.get('fiscal_period', '') or doc.get('published_at', '')
+            }
+            for doc in docs[:4]
+        ] + [
+            {
+                'title': job.get('title', ''),
+                'url': job.get('job_url', ''),
+                'source_type': 'job',
+                'label': job.get('title', '')
+            }
+            for job in jobs[:4]
+        ]
+        return {
+            'company': company,
+            'domain': 'strategic_readout',
+            'insight_text': response.choices[0].message.content.strip(),
+            'evidence': evidence
+        }
+    except Exception as e:
+        print(f"[insight_engine] Error generating final strategy readout: {e}")
         return None
 
 
@@ -246,21 +411,32 @@ def generate_insights(company, jobs, company_docs=None):
         for domain, domain_jobs in domain_groups.items()
         if len(domain_jobs) >= MIN_JOBS_FOR_INSIGHT
     }
+    ranked_domains = sorted(
+        eligible.items(),
+        key=lambda item: (-len(item[1]), item[0])
+    )[:MAX_DOMAIN_INSIGHTS]
 
     all_insights = []
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = {
             executor.submit(_generate_single_insight, company, domain, domain_jobs): domain
-            for domain, domain_jobs in eligible.items()
+            for domain, domain_jobs in ranked_domains
         }
         for future in as_completed(futures):
             result = future.result()
             if result:
                 all_insights.append(result)
+    domain_rank = {domain: idx for idx, (domain, _) in enumerate(ranked_domains)}
+    all_insights.sort(key=lambda item: domain_rank.get(item.get('domain', ''), 999))
+
+    final_readout = _generate_final_strategy_readout(company, jobs, company_docs or [])
+    if final_readout:
+        all_insights.insert(0, final_readout)
 
     official_insight = _generate_official_materials_insight(company, jobs, company_docs or [])
     if official_insight:
-        all_insights.insert(0, official_insight)
+        insert_at = 1 if final_readout else 0
+        all_insights.insert(insert_at, official_insight)
 
     if all_insights:
         save_insights(all_insights)

@@ -1,12 +1,15 @@
 import json
+import os
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai import OpenAI
-import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+EXTRACTION_MODEL = os.getenv('JOB_EXTRACTION_MODEL', 'gpt-4o-mini')
+MAX_JOBS_TO_ANALYZE = int(os.getenv('MAX_JOBS_TO_ANALYZE', '50'))
 
 # How many jobs to extract simultaneously.
 # 10 parallel threads = ~10x faster than sequential.
@@ -74,7 +77,7 @@ def _extract_single(job, company):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=EXTRACTION_MODEL,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0
@@ -95,12 +98,56 @@ def _extract_single(job, company):
         }
 
 
+def _normalize_text(text):
+    text = re.sub(r"\s+", " ", (text or "").strip().lower())
+    return text
+
+
+def _dedupe_and_limit_jobs(raw_jobs):
+    ranked = []
+    for job in raw_jobs:
+        description = job.get('job_description', '') or ''
+        title = job.get('job_title', '') or ''
+        url = job.get('job_apply_link', '') or job.get('job_google_link', '') or ''
+        ranked.append((
+            -len(description),
+            title.lower(),
+            {
+                **job,
+                'job_description': description,
+                'job_title': title,
+                'job_apply_link': url,
+            }
+        ))
+
+    ranked.sort(key=lambda item: (item[0], item[1]))
+
+    deduped = []
+    seen = set()
+    for _, _, job in ranked:
+        description = _normalize_text(job.get('job_description', ''))
+        signature = (
+            _normalize_text(job.get('job_title', '')),
+            _normalize_text(job.get('job_apply_link', '')),
+            description[:600],
+        )
+        if signature in seen:
+            continue
+        seen.add(signature)
+        deduped.append(job)
+        if len(deduped) >= MAX_JOBS_TO_ANALYZE:
+            break
+
+    return deduped
+
+
 def extract_and_classify_jobs(raw_jobs, company):
     """
     Extract structured data from all jobs in parallel using a thread pool.
     10 simultaneous OpenAI calls → ~10x faster than sequential.
     """
     valid_jobs = [j for j in raw_jobs if (j.get('job_description', '') or '').strip()]
+    valid_jobs = _dedupe_and_limit_jobs(valid_jobs)
 
     structured = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:

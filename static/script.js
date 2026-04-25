@@ -11,6 +11,7 @@ let loadingQuoteDeck = [];
 let sourceMixChart = null;
 let loadingProgressTimer = null;
 let loadingStartedAt = 0;
+let chartJsPromise = null;
 
 /* Tell browser we manage scroll restoration ourselves */
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
@@ -165,6 +166,25 @@ function startLoadingProgress() {
 function show(id) { document.getElementById(id).classList.remove('hidden'); }
 function hide(id) { document.getElementById(id).classList.add('hidden'); }
 function el(id)   { return document.getElementById(id); }
+
+function loadChartJs() {
+  if (window.Chart) return Promise.resolve(window.Chart);
+  if (chartJsPromise) return chartJsPromise;
+
+  chartJsPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+    script.async = true;
+    script.onload = () => resolve(window.Chart);
+    script.onerror = () => {
+      chartJsPromise = null;
+      reject(new Error('Failed to load Chart.js'));
+    };
+    document.head.appendChild(script);
+  });
+
+  return chartJsPromise;
+}
 
 function showError(msg) {
   const e = el('error-msg');
@@ -396,14 +416,14 @@ function scrollToChat() {
   el('chat-input').focus();
 }
 
-function finishAnalysis(company, data) {
+async function finishAnalysis(company, data) {
   triedNames.add(company.toLowerCase());
   stopLoadingSteps();
   currentCompany = company;
   currentSourceStatus = data.source_status || null;
   chatHistory = [];
 
-  renderResults(data);
+  await renderResults(data);
   show('results-section');
   show('chat-section');
   show('deep-scan-btn');
@@ -472,7 +492,7 @@ function renderSuggestedQuestions(company) {
 }
 
 /* ── Render Results ── */
-function renderResults(data) {
+async function renderResults(data) {
   const { trends, insights } = data;
   currentSourceStatus = data.source_status || null;
 
@@ -483,11 +503,21 @@ function renderResults(data) {
 
   el('cache-badge').classList.add('hidden');
 
+  let chartsAvailable = true;
+  try {
+    await loadChartJs();
+  } catch (err) {
+    chartsAvailable = false;
+    console.error('Chart.js failed to load', err);
+  }
+
   renderDomains(trends.domain_distribution);
   renderInsights(insights);
   renderSkills(trends.top_skills);
-  renderSourceMix(currentSourceStatus?.source_counts || {});
-  renderSeniorityChart(trends.seniority_distribution);
+  if (chartsAvailable) {
+    renderSourceMix(currentSourceStatus?.source_counts || {});
+    renderSeniorityChart(trends.seniority_distribution);
+  }
 
   const note = el('analysis-source-note');
   if (currentSourceStatus && currentSourceStatus.message) {
@@ -497,6 +527,24 @@ function renderResults(data) {
     note.textContent = '';
     note.classList.add('hidden');
   }
+
+  if (!chartsAvailable) {
+    showChartFallback('source-mix-chart', 'Chart preview unavailable right now, but the analysis results loaded successfully.');
+    showChartFallback('seniority-chart', 'Seniority chart unavailable right now, but the analysis results loaded successfully.');
+  }
+}
+
+function showChartFallback(canvasId, message) {
+  const canvas = el(canvasId);
+  if (!canvas) return;
+  canvas.style.display = 'none';
+  canvas.parentNode.querySelectorAll('.chart-load-fallback').forEach(n => n.remove());
+
+  const msg = document.createElement('p');
+  msg.className = 'chart-load-fallback';
+  msg.style.cssText = 'font-size:0.82rem;color:var(--text-3);margin-top:8px';
+  msg.textContent = message;
+  canvas.parentNode.appendChild(msg);
 }
 
 function renderSourceMix(sourceCounts) {

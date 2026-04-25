@@ -7,6 +7,23 @@ from db.db import get_cached_jobs, get_cached_company_documents
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+CHAT_MODEL = os.getenv('CHAT_MODEL', 'gpt-4o-mini')
+
+SOURCE_PRIORITY = {
+    'earnings_call_transcript': 100,
+    'shareholder_letter': 98,
+    'investor_day': 96,
+    'quarterly_filing': 90,
+    'earnings_release': 88,
+    'job': 80,
+    'pricing_page': 74,
+    'product_doc': 72,
+    'changelog': 70,
+    'github_release': 68,
+    'customer_story': 64,
+    'partner_page': 62,
+    'newsroom_post': 50,
+}
 
 SYSTEM_PROMPT = """You are a competitive intelligence analyst specializing in inferring company \
 product strategy from hiring signals and official company materials.
@@ -146,6 +163,15 @@ def answer_question(question, company, history):
             'evidence': []
         }
 
+    relevant_docs = sorted(
+        relevant_docs,
+        key=lambda doc: (
+            SOURCE_PRIORITY.get(doc.get('source_type', 'job'), 10),
+            doc.get('relevance', 0),
+        ),
+        reverse=True
+    )
+
     context = "\n---\n".join(_format_context_part(doc) for doc in relevant_docs)
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -161,7 +187,7 @@ def answer_question(question, company, history):
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=CHAT_MODEL,
             messages=messages,
             temperature=0.3
         )

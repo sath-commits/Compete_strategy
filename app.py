@@ -284,8 +284,11 @@ def analyze():
                 threading.Thread(
                     target=add_company_documents_to_index, args=(company_docs,), daemon=True
                 ).start()
-            insights = generate_insights(company, structured_jobs, company_docs)
-            trends = compute_trends(company, structured_jobs)
+            with ThreadPoolExecutor(max_workers=2) as ex:
+                f_insights = ex.submit(generate_insights, company, structured_jobs, company_docs)
+                f_trends = ex.submit(compute_trends, company, structured_jobs)
+                insights = f_insights.result()
+                trends = f_trends.result()
             return jsonify({
                 'company': company,
                 'job_count': len(structured_jobs),

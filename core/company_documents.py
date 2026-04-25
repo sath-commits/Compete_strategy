@@ -16,6 +16,7 @@ from core.company_profiles import get_company_profile
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+DOC_SUMMARY_MODEL = os.getenv("DOC_SUMMARY_MODEL", "gpt-4o-mini")
 
 SEC_USER_AGENT = os.getenv(
     "SEC_USER_AGENT",
@@ -37,6 +38,22 @@ MAX_NEWS_DOCS = 15
 MAX_CHANGELOG_DOCS = 10
 MAX_GITHUB_DOCS = 10
 MAX_SUMMARY_WORKERS = 6
+
+SOURCE_PRIORITY = {
+    "earnings_call_transcript": 100,
+    "shareholder_letter": 98,
+    "investor_day": 96,
+    "quarterly_filing": 90,
+    "earnings_release": 88,
+    "job": 80,
+    "pricing_page": 74,
+    "product_doc": 72,
+    "changelog": 70,
+    "github_release": 68,
+    "customer_story": 64,
+    "partner_page": 62,
+    "newsroom_post": 50,
+}
 
 LEGAL_SOURCE_POLICY = {
     "jobs": "API only",
@@ -160,7 +177,7 @@ def _summarize_document(doc: dict) -> dict:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=DOC_SUMMARY_MODEL,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0
@@ -196,6 +213,20 @@ def _normalize_source_doc(company: str, source_type: str, source_group: str, tit
         "published_at": published_at or "",
         "source_domain": domain,
     }
+
+
+def _source_priority(doc: dict) -> int:
+    return SOURCE_PRIORITY.get(doc.get("source_type", ""), 10)
+
+
+def _source_sort_key(doc: dict):
+    return (
+        _source_priority(doc),
+        str(doc.get("published_at") or ""),
+        str(doc.get("fiscal_year") or ""),
+        str(doc.get("fiscal_period") or ""),
+        str(doc.get("title") or "").lower(),
+    )
 
 
 def _fetch_sec_documents(company: str, public_company: dict, max_docs: int = 4) -> list:
@@ -547,6 +578,7 @@ def fetch_company_documents(company: str, public_company: Optional[dict] = None)
         seen.add(key)
         normalized.append(doc)
 
+    normalized.sort(key=_source_sort_key, reverse=True)
     normalized = normalized[:MAX_TOTAL_DOCS]
     enriched = []
     with ThreadPoolExecutor(max_workers=min(MAX_SUMMARY_WORKERS, max(1, len(normalized)))) as executor:
@@ -556,5 +588,6 @@ def fetch_company_documents(company: str, public_company: Optional[dict] = None)
                 enriched.append(future.result())
             except Exception as e:
                 print(f"[company_documents] Document summary failed: {e}")
+    enriched.sort(key=_source_sort_key, reverse=True)
     print(f"[company_documents] Collected {len(enriched)} documents for '{company}'")
     return enriched
