@@ -46,6 +46,10 @@
       color: var(--white); font-weight: 800; font-size: 1.15rem;
       text-decoration: none; letter-spacing: -0.3px;
     }
+    .nav-logo-text {
+      display: inline-flex; align-items: baseline; gap: 0.35em;
+    }
+    .nav-logo-main { color: var(--white); }
     .nav-logo .logo-dot { color: var(--lime); }
     .nav-links { display: flex; align-items: center; gap: 8px; }
     .nav-link {
@@ -596,7 +600,10 @@
   <div style="display:flex;align-items:center;gap:20px">
     <a class="nav-logo" href="#">
       <i class="bi bi-graph-up-arrow" style="color:var(--lime);font-size:1.2rem"></i>
-      Read Between <span class="logo-dot">The Hires</span>
+      <span class="nav-logo-text">
+        <span class="nav-logo-main">Read Between</span>
+        <span class="logo-dot">The Hires</span>
+      </span>
     </a>
   </div>
   <div class="nav-links">
