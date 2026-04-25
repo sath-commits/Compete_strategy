@@ -348,33 +348,38 @@
     .section-eyebrow i { margin-right: 5px; font-size: 0.8rem; }
 
     /* Roadmap */
-    .roadmap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 40px; }
-    .roadmap-card {
-      border-radius: var(--radius); padding: 24px;
-      border: 1.5px solid rgba(255,255,255,0.1);
-      background: rgba(255,255,255,0.05);
+    .roadmap-list {
+      margin-top: 28px; list-style: none; display: flex; flex-direction: column; gap: 12px;
+      max-width: 560px;
     }
-    .roadmap-phase {
-      font-size: 0.68rem; font-weight: 800; letter-spacing: 1.5px;
-      text-transform: uppercase; color: var(--lime); margin-bottom: 10px;
+    .roadmap-list li {
+      display: flex; align-items: flex-start; gap: 12px;
+      font-size: 0.92rem; color: rgba(255,255,255,0.72); line-height: 1.5;
+      padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.08);
     }
-    .roadmap-title { font-size: 1rem; font-weight: 700; color: var(--white); margin-bottom: 8px; }
-    .roadmap-items { list-style: none; }
-    .roadmap-items li {
-      font-size: 0.85rem; color: rgba(255,255,255,0.55);
-      padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
-      line-height: 1.5;
-    }
-    .roadmap-items li:last-child { border-bottom: none; }
-    .roadmap-items li::before { content: "→ "; color: var(--lime); font-weight: 700; }
+    .roadmap-list li:last-child { border-bottom: none; padding-bottom: 0; }
+    .roadmap-list i { color: var(--lime); flex-shrink: 0; margin-top: 3px; }
 
     /* Contact */
-    .contact-grid { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 32px; }
+    .contact-card {
+      margin-top: 22px; max-width: 640px; padding: 18px 20px;
+      border: 1px solid rgba(255,255,255,0.08); border-radius: 18px;
+      background: rgba(255,255,255,0.04);
+    }
+    .contact-kicker {
+      font-size: 0.72rem; font-weight: 800; letter-spacing: 1.6px;
+      text-transform: uppercase; color: rgba(255,255,255,0.4); margin-bottom: 10px;
+    }
+    .contact-copy {
+      font-size: 0.92rem; color: rgba(255,255,255,0.62); line-height: 1.6;
+      max-width: 540px;
+    }
+    .contact-grid { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
     .contact-btn {
       display: inline-flex; align-items: center; gap: 8px;
-      padding: 14px 24px; border-radius: var(--pill);
+      padding: 11px 18px; border-radius: var(--pill);
       font-family: 'Inter', sans-serif; font-weight: 700;
-      font-size: 0.9rem; text-decoration: none; transition: all 0.2s;
+      font-size: 0.84rem; text-decoration: none; transition: all 0.2s;
     }
     .contact-btn.linkedin { background: var(--lime); color: var(--black); }
     .contact-btn.linkedin:hover { background: var(--lime-dark); }
@@ -748,32 +753,13 @@
   <div class="container">
     <p class="section-eyebrow"><i class="bi bi-compass"></i> What could be added</p>
     <h2 class="section-heading" style="color:var(--white)">Ideas for where this could go</h2>
-    <p class="section-body">This is a side project I built to learn and showcase what's possible with AI + multi-source competitive signals. Here are some directions it could grow in:</p>
-    <ul style="margin-top:32px;list-style:none;display:flex;flex-direction:column;gap:14px;max-width:640px">
-      <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
-        <i class="bi bi-arrow-left-right" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
-        Compare multiple companies side by side — see whose hiring, product, and investor signals line up most strongly in each domain
-      </li>
-      <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
-        <i class="bi bi-trophy-fill" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
-        Leaderboard: which companies are generating the strongest combined signal momentum right now
-      </li>
-      <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
-        <i class="bi bi-graph-up" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
-        Signal velocity charts — track how a company's hiring, investor, and release signals shift quarter to quarter
-      </li>
-      <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
-        <i class="bi bi-newspaper" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
-        Add more official source coverage across investor sites, release notes, public documentation, and owned content
-      </li>
-      <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
-        <i class="bi bi-envelope-fill" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
-        Weekly digest — email when a company you're tracking posts a major hiring, investor, release, or GitHub signal
-      </li>
-      <li style="display:flex;align-items:flex-start;gap:12px;font-size:0.95rem;color:rgba(255,255,255,0.7);line-height:1.6">
-        <i class="bi bi-grid-3x3-gap-fill" style="color:var(--lime);flex-shrink:0;margin-top:3px"></i>
-        Source overlap heatmap across a whole competitive landscape
-      </li>
+    <p class="section-body">A few natural extensions for the product:</p>
+    <ul class="roadmap-list">
+      <li><i class="bi bi-arrow-left-right"></i><span>Compare companies side by side.</span></li>
+      <li><i class="bi bi-graph-up"></i><span>Track signal velocity by quarter.</span></li>
+      <li><i class="bi bi-newspaper"></i><span>Expand official source coverage.</span></li>
+      <li><i class="bi bi-envelope-fill"></i><span>Send weekly monitoring digests.</span></li>
+      <li><i class="bi bi-grid-3x3-gap-fill"></i><span>Map signal overlap across a market.</span></li>
     </ul>
   </div>
 </section>
@@ -782,18 +768,19 @@
 <section class="info-section dark" id="contact" style="padding-top:0;border-top:1px solid rgba(255,255,255,0.06)">
   <div class="container">
     <p class="section-eyebrow"><i class="bi bi-person-circle"></i> Built by</p>
-    <h2 class="section-heading" style="color:var(--white)">Sathappan</h2>
-    <p class="section-body">
-      Product and strategy professional passionate about building tools that give teams an unfair competitive advantage.
-      Read Between The Hires was built as a personal project to solve a real problem: how do you track what competitors are building before they announce it, using only signals they publish or expose themselves?
-    </p>
-    <div class="contact-grid">
-      <a class="contact-btn linkedin" href="https://www.linkedin.com/in/sathappan-sathappan" target="_blank">
-        <i class="bi bi-linkedin"></i> Connect on LinkedIn
-      </a>
-      <a class="contact-btn email" href="mailto:sathappan.nus@gmail.com">
-        <i class="bi bi-envelope-fill"></i> sathappan.nus@gmail.com
-      </a>
+    <div class="contact-card">
+      <div class="contact-kicker">Sathappan</div>
+      <p class="contact-copy">
+        Product and strategy professional building tools for sharper competitive reads.
+      </p>
+      <div class="contact-grid">
+        <a class="contact-btn linkedin" href="https://www.linkedin.com/in/sathappan-sathappan" target="_blank">
+          <i class="bi bi-linkedin"></i> LinkedIn
+        </a>
+        <a class="contact-btn email" href="mailto:sathappan.nus@gmail.com">
+          <i class="bi bi-envelope-fill"></i> Email
+        </a>
+      </div>
     </div>
   </div>
 </section>
