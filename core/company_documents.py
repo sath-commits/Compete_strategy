@@ -33,15 +33,17 @@ GITHUB_API_BASE = "https://api.github.com"
 
 MAX_RAW_TEXT_CHARS = 18000
 MAX_TRANSCRIPT_CHARS = 48000  # transcripts are long; Q&A lives in the second half
-MAX_TOTAL_DOCS = 16           # raised to fit new source types
+MAX_TOTAL_DOCS = 20           # raised to fit new source types
 MAX_QUARTERLY_DOCS = 8
 MAX_NEWS_DOCS = 15
 MAX_CHANGELOG_DOCS = 10
 MAX_GITHUB_DOCS = 10
 MAX_ARXIV_DOCS = 8
+MAX_PATENT_DOCS = 8
 MAX_SUMMARY_WORKERS = 6
 
 ARXIV_API_BASE = "https://export.arxiv.org/api/query"
+PATENTSVIEW_API_BASE = "https://search.patentsview.org/api/v1/patent/"
 EDGAR_EFTS_URL = "https://efts.sec.gov/LATEST/search-index"
 
 SOURCE_PRIORITY = {
@@ -53,6 +55,7 @@ SOURCE_PRIORITY = {
     "sec_form_d": 86,           # SEC-filed private placement — date, amount, security type
     "job": 80,
     "arxiv_paper": 78,          # research papers reveal R&D direction months before launch
+    "patent": 76,               # USPTO patent filings reveal R&D bets 12-24 months ahead
     "pricing_page": 74,
     "product_doc": 72,
     "changelog": 70,
@@ -913,6 +916,93 @@ def _fetch_arxiv_documents(company: str, max_results: int = MAX_ARXIV_DOCS) -> l
     return docs
 
 
+def _fetch_patent_documents(company: str, max_docs: int = MAX_PATENT_DOCS) -> list:
+    """
+    Fetch recent USPTO patent grants for a company via the PatentsView API.
+    Free, no API key required. Returns patents from the last 3 years.
+    Signals: R&D investment areas, technology bets, often 12-24 months ahead of product.
+    """
+    from datetime import timedelta
+
+    cutoff = (datetime.utcnow() - timedelta(days=365 * 3)).strftime("%Y-%m-%d")
+
+    payload = {
+        "q": {
+            "_and": [
+                {"_text_phrase": {"assignee_organization": company}},
+                {"_gte": {"patent_date": cutoff}},
+            ]
+        },
+        "f": [
+            "patent_id",
+            "patent_title",
+            "patent_abstract",
+            "patent_date",
+            "patent_type",
+            "assignee_organization",
+            "cpc_group_id",
+        ],
+        "o": {"per_page": max_docs, "sort": [{"patent_date": "desc"}]},
+    }
+
+    try:
+        resp = requests.post(
+            PATENTSVIEW_API_BASE,
+            json=payload,
+            headers={"User-Agent": SEC_USER_AGENT, "Content-Type": "application/json"},
+            timeout=25,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        print(f"[company_documents] PatentsView fetch failed for '{company}': {e}")
+        return []
+
+    patents = data.get("patents") or []
+    docs = []
+
+    for p in patents:
+        title    = (p.get("patent_title") or "").strip()
+        abstract = (p.get("patent_abstract") or "").strip()
+        date     = (p.get("patent_date") or "").strip()
+        pid      = (p.get("patent_id") or "").strip()
+        cpcs     = [
+            g.get("cpc_group_id", "")
+            for g in (p.get("cpcs") or [])
+            if g.get("cpc_group_id")
+        ]
+        assignees = [
+            a.get("assignee_organization", "")
+            for a in (p.get("assignees") or [])
+            if a.get("assignee_organization")
+        ]
+
+        if not title or not pid:
+            continue
+
+        raw_text = (
+            f"Patent title: {title}\n"
+            f"Patent number: US {pid}\n"
+            f"Grant date: {date}\n"
+            f"Assignee: {', '.join(assignees) or company}\n"
+            f"CPC classification: {', '.join(cpcs[:6])}\n"
+            f"Abstract: {abstract[:1200]}\n"
+        )
+
+        docs.append(_normalize_source_doc(
+            company=company,
+            source_type="patent",
+            source_group="research",
+            title=f"{title[:200]} (US {pid})",
+            raw_text=raw_text,
+            source_url=f"https://patents.google.com/patent/US{pid}",
+            published_at=date,
+        ))
+
+    print(f"[company_documents] PatentsView: {len(docs)} patents for '{company}'")
+    return docs
+
+
 def fetch_company_documents(company: str, public_company: Optional[dict] = None) -> list:
     public_company = public_company or {}
     profile = get_company_profile(company, public_company)
@@ -945,8 +1035,9 @@ def fetch_company_documents(company: str, public_company: Optional[dict] = None)
             ))
 
         futures.append(executor.submit(_fetch_github_documents, company, profile, MAX_GITHUB_DOCS))
-        futures.append(executor.submit(_fetch_crunchbase_documents, company))
+        futures.append(executor.submit(_fetch_form_d_documents, company))
         futures.append(executor.submit(_fetch_arxiv_documents, company))
+        futures.append(executor.submit(_fetch_patent_documents, company))
 
         for future in as_completed(futures):
             try:

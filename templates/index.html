@@ -196,6 +196,14 @@
     .res-priority-copy {
       font-size: 0.88rem; line-height: 1.55; color: rgba(255,255,255,0.72);
     }
+    .source-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .source-chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: 20px; font-size: 0.76rem; font-weight: 500;
+      background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.8);
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+    .source-chip i { font-size: 0.72rem; opacity: 0.75; }
 
     .featured-insight-wrap { margin-top: 18px; }
     .featured-insight-card {
@@ -706,9 +714,9 @@
           <div class="stat-lbl"><i class="bi bi-lightbulb"></i> Insights Generated</div>
         </div>
       </div>
-      <div class="res-priority-note">
-        <div class="res-priority-icon"><i class="bi bi-briefcase-fill"></i></div>
-        <div class="res-priority-copy">
+      <div class="res-priority-note" id="source-provenance-bar">
+        <div class="res-priority-icon"><i class="bi bi-layers-fill"></i></div>
+        <div class="res-priority-copy" id="source-provenance-copy">
           <strong>Hiring data is the primary signal in this product.</strong> Official company materials are used mainly to confirm, refine, or challenge what the job-market footprint already suggests.
         </div>
       </div>

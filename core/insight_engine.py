@@ -24,6 +24,7 @@ SOURCE_PRIORITY = {
     'sec_form_d': 86,
     'job': 80,
     'arxiv_paper': 78,
+    'patent': 76,
     'pricing_page': 74,
     'product_doc': 72,
     'changelog': 70,

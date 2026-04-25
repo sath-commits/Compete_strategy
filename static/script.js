@@ -502,6 +502,58 @@ function renderSuggestedQuestions(company) {
   win.scrollTop = win.scrollHeight;
 }
 
+/* ── Source Provenance Banner ── */
+function renderSourceProvenance(sourceCounts, jobCount) {
+  const copyEl = el('source-provenance-copy');
+  if (!copyEl) return;
+
+  const SOURCE_META = {
+    job:                    { icon: 'bi-briefcase-fill',     label: 'Job postings' },
+    earnings_call_transcript:{ icon: 'bi-mic-fill',          label: 'Earnings calls' },
+    shareholder_letter:     { icon: 'bi-envelope-open-fill', label: 'Shareholder letters' },
+    investor_day:           { icon: 'bi-calendar-event-fill',label: 'Investor day' },
+    quarterly_filing:       { icon: 'bi-file-earmark-text-fill', label: 'Quarterly filings' },
+    earnings_release:       { icon: 'bi-graph-up-arrow',     label: 'Earnings releases' },
+    sec_form_d:             { icon: 'bi-bank',               label: 'SEC Form D' },
+    arxiv_paper:            { icon: 'bi-journal-text',       label: 'arXiv papers' },
+    patent:                 { icon: 'bi-award-fill',         label: 'USPTO patents' },
+    github_release:         { icon: 'bi-github',             label: 'GitHub releases' },
+    changelog:              { icon: 'bi-clock-history',      label: 'Release notes' },
+    pricing_page:           { icon: 'bi-tag-fill',           label: 'Pricing page' },
+    product_doc:            { icon: 'bi-book-fill',          label: 'Product docs' },
+    newsroom_post:          { icon: 'bi-newspaper',          label: 'Newsroom' },
+    customer_story:         { icon: 'bi-chat-quote-fill',    label: 'Customer stories' },
+    partner_page:           { icon: 'bi-diagram-2-fill',     label: 'Partner pages' },
+  };
+
+  const counts = Object.assign({}, sourceCounts || {});
+  if (jobCount > 0) counts['job'] = (counts['job'] || 0) + jobCount;
+
+  // Sort: jobs first, then by count desc
+  const entries = Object.entries(counts)
+    .filter(([, n]) => n > 0)
+    .sort(([a], [b]) => {
+      if (a === 'job') return -1;
+      if (b === 'job') return 1;
+      return counts[b] - counts[a];
+    });
+
+  if (!entries.length) return;
+
+  const chips = entries.map(([type, count]) => {
+    const meta = SOURCE_META[type] || { icon: 'bi-file-earmark', label: type.replace(/_/g, ' ') };
+    const countLabel = type === 'job' ? `${count} roles` : `${count} doc${count !== 1 ? 's' : ''}`;
+    return `<span class="source-chip"><i class="bi ${meta.icon}"></i>${meta.label} <span style="opacity:0.6">(${countLabel})</span></span>`;
+  }).join('');
+
+  const hasOfficialSources = entries.some(([t]) => t !== 'job');
+  const intro = hasOfficialSources
+    ? '<strong>Sources used for this analysis:</strong>'
+    : '<strong>Hiring data is the primary signal.</strong> No official company documents were found for this company.';
+
+  copyEl.innerHTML = `${intro}<div class="source-chips">${chips}</div>`;
+}
+
 /* ── Render Results ── */
 async function renderResults(data) {
   const { trends, insights } = data;
@@ -522,6 +574,7 @@ async function renderResults(data) {
     console.error('Chart.js failed to load', err);
   }
 
+  renderSourceProvenance(currentSourceStatus?.source_counts || {}, data.job_count);
   renderDomains(trends.domain_distribution, trends.tagged_jobs || 0, data.job_count);
   renderInsights(insights);
   renderSkills(trends.top_skills);
@@ -721,6 +774,7 @@ function prettySourceType(sourceType) {
     github_release: 'GitHub release',
     sec_form_d: 'SEC Form D (private placement)',
     arxiv_paper: 'Research paper (arXiv)',
+    patent: 'USPTO Patent',
   };
   return labels[sourceType] || sourceType || 'Source';
 }
@@ -746,6 +800,7 @@ function getInsightSourceTone(evidence) {
     github_release: { label: 'GitHub Signal', style: 'background:#EFEAFB;color:#5B3C9D' },
     sec_form_d: { label: 'Funding Signal', style: 'background:#FFF0FB;color:#8A1A6A' },
     arxiv_paper: { label: 'Research Signal', style: 'background:#F0F7FF;color:#1A4A8A' },
+    patent: { label: 'Patent Signal', style: 'background:#F0FFF4;color:#1A6A3A' },
   };
   return labels[types[0]] || { label: 'Official Signal', style: 'background:#ECE8FF;color:#4B3FA8' };
 }
