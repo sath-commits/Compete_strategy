@@ -250,6 +250,10 @@
       justify-content: center; font-size: 0.85rem; flex-shrink: 0;
     }
     .res-block-sub { font-size: 0.85rem; color: var(--text-2); padding-left: 40px; }
+    .res-block-note {
+      margin-top: 10px; margin-left: 40px;
+      font-size: 0.8rem; color: var(--text-3); line-height: 1.5;
+    }
 
     /* Stats */
     .stats-row { display: flex; gap: 16px; margin-bottom: 0; flex-wrap: wrap; }
@@ -517,6 +521,7 @@
       .res-block { padding: 32px 0; }
       .res-block-title { font-size: 1.1rem; }
       .res-block-sub { padding-left: 0; margin-top: 4px; }
+      .res-block-note { margin-left: 0; }
       .res-summary { padding: 20px 0; }
       .stats-row { gap: 10px; }
       .stat-card { padding: 14px 16px; min-width: 100px; }
@@ -714,6 +719,7 @@
           <button class="btn-share x-twitter" onclick="shareTwitter()"><i class="bi bi-twitter-x"></i> Post on X</button>
           <button class="btn-share linkedin-btn" onclick="shareLinkedIn()"><i class="bi bi-linkedin"></i> LinkedIn</button>
           <button class="btn-share" onclick="copyShareLink()"><i class="bi bi-link-45deg"></i> Copy link</button>
+          <button class="btn-share" onclick="runAnalysis(currentCompany, true)" title="Re-fetch and re-analyze fresh data"><i class="bi bi-arrow-clockwise"></i> Re-analyze</button>
         </div>
       </div>
       <div id="analysis-source-note" class="hidden" style="margin-top:14px;padding:14px 16px;border:1px solid rgba(0,0,0,0.08);border-radius:14px;background:rgba(255,255,255,0.66);font-size:0.92rem;color:var(--text-2)"></div>
@@ -726,6 +732,7 @@
       <div class="res-block-header">
         <h2 class="res-block-title"><span class="ti"><i class="bi bi-diagram-3-fill"></i></span> Strategic Domains</h2>
         <p class="res-block-sub">Where hiring demand clusters most heavily, with official sources used as supporting context when available</p>
+        <p id="domains-coverage-note" class="res-block-note hidden"></p>
       </div>
       <div id="domains-pills" class="domains-pills"></div>
     </div>

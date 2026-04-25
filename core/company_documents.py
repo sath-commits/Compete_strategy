@@ -32,6 +32,7 @@ FMP_BASE_URL = "https://financialmodelingprep.com/stable"
 GITHUB_API_BASE = "https://api.github.com"
 
 MAX_RAW_TEXT_CHARS = 18000
+MAX_TRANSCRIPT_CHARS = 48000  # transcripts are long; Q&A lives in the second half
 MAX_TOTAL_DOCS = 12
 MAX_QUARTERLY_DOCS = 8
 MAX_NEWS_DOCS = 15
@@ -87,7 +88,10 @@ Return a JSON object with this exact shape:
     "metrics": ["explicitly mentioned metrics, guidance, or KPIs"],
     "customer_segments": ["explicit customer, vertical, or geography mentions"],
     "management_priorities": ["what the company says it is investing in or focusing on"],
-    "qa_topics": ["only for Q&A or transcript-style materials; otherwise empty list"]
+    "qa_topics": ["only for Q&A or transcript-style materials; otherwise empty list"],
+    "key_quotes": [
+      {{"speaker": "Name and title e.g. 'Satya Nadella, CEO'", "quote": "verbatim or near-verbatim sentence revealing strategy, product priority, or investment area"}}
+    ]
   }}
 }}
 
@@ -95,6 +99,38 @@ Rules:
 - Ground every field in the source text only.
 - Do not infer missing facts.
 - If a field has no support, return an empty list.
+- For key_quotes: max 5 entries. Prefer CEO/CFO/CPO statements over analyst questions. Only include quotes that reveal specific strategic intent, not generic commentary. Speaker should be the name and title as they appear in the document.
+- Return valid JSON only."""
+
+TRANSCRIPT_QA_PROMPT = """You are extracting competitive intelligence from the Q&A section of an earnings call transcript.
+
+Company: {company}
+Period: {period}
+
+Q&A transcript:
+{text}
+
+Focus ONLY on management answers (CEO, CFO, CPO, division heads), not analyst questions.
+
+Return a JSON object with this exact shape:
+{{
+  "summary_text": "3-5 sentences summarising the most strategically important themes management discussed when answering analyst questions.",
+  "structured_signals": {{
+    "focus_areas": ["strategic priorities that came up repeatedly in Q&A"],
+    "products_or_initiatives": ["specific products or programs management discussed"],
+    "metrics": ["any numbers, guidance, or KPIs management mentioned"],
+    "management_priorities": ["explicit commitments or investments management described"],
+    "qa_topics": ["the distinct topics analysts asked about — be specific, not generic"],
+    "key_quotes": [
+      {{"speaker": "Name and title e.g. 'Reed Hastings, Co-CEO'", "quote": "verbatim or near-verbatim sentence from management revealing strategy or forward plans"}}
+    ]
+  }}
+}}
+
+Rules:
+- Every field must be grounded in the transcript text only.
+- key_quotes: max 6 entries. Speaker must be the management respondent's name and title as they appear in the transcript, not the analyst asking the question.
+- Quotes must be direct management statements, not paraphrases.
 - Return valid JSON only."""
 
 
@@ -160,21 +196,46 @@ def _fetch_text(url: str, timeout: int = 20) -> str:
     return response.text
 
 
-def _summarize_document(doc: dict) -> dict:
-    raw_text = (doc.get("raw_text") or "")[:MAX_RAW_TEXT_CHARS]
-    if not raw_text.strip():
-        doc["summary_text"] = ""
-        doc["structured_signals"] = {}
-        return doc
+def _split_transcript(text: str):
+    """Split earnings call transcript into prepared remarks and Q&A sections."""
+    qa_markers = [
+        r"(?im)^[\s\*\-]*q(?:uestion)?[\s\-&]+a(?:nswer)?[\s\-]*session",
+        r"(?im)^[\s\*\-]*questions?\s+and\s+answers?",
+        r"(?im)^[\s\*\-]*operator[\s\:]+.*?(question|q&a|queue)",
+        r"(?im)^\s*we will now begin the question",
+        r"(?im)^\s*at this time.{0,60}question",
+    ]
+    for pattern in qa_markers:
+        match = re.search(pattern, text)
+        if match:
+            split_pos = match.start()
+            return text[:split_pos].strip(), text[split_pos:].strip()
+    # No Q&A marker found — treat whole thing as prepared remarks
+    return text.strip(), ""
 
-    prompt = DOC_SUMMARY_PROMPT.format(
-        source_type=doc.get("source_type", ""),
-        company=doc.get("company", ""),
-        title=doc.get("title", ""),
-        period=doc.get("fiscal_period") or doc.get("published_at") or "",
-        text=raw_text,
-    )
 
+def _merge_signals(base: dict, extra: dict) -> dict:
+    """Merge two structured_signals dicts, deduplicating list values."""
+    merged = {}
+    all_keys = set(base) | set(extra)
+    for key in all_keys:
+        a = base.get(key, [])
+        b = extra.get(key, [])
+        if isinstance(a, list) and isinstance(b, list):
+            seen = set()
+            combined = []
+            for item in a + b:
+                norm = item.lower().strip()
+                if norm not in seen:
+                    seen.add(norm)
+                    combined.append(item)
+            merged[key] = combined
+        else:
+            merged[key] = b if b else a
+    return merged
+
+
+def _call_summary_llm(prompt: str, fallback_text: str, doc_title: str) -> dict:
     try:
         response = client.chat.completions.create(
             model=DOC_SUMMARY_MODEL,
@@ -182,13 +243,69 @@ def _summarize_document(doc: dict) -> dict:
             response_format={"type": "json_object"},
             temperature=0
         )
-        payload = json.loads(response.choices[0].message.content)
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        print(f"[company_documents] LLM call failed for '{doc_title}': {e}")
+        return {"summary_text": fallback_text[:1200], "structured_signals": {}}
+
+
+def _summarize_document(doc: dict) -> dict:
+    source_type = doc.get("source_type", "")
+    company = doc.get("company", "")
+    title = doc.get("title", "")
+    period = doc.get("fiscal_period") or doc.get("published_at") or ""
+    raw_text = doc.get("raw_text") or ""
+
+    if not raw_text.strip():
+        doc["summary_text"] = ""
+        doc["structured_signals"] = {}
+        return doc
+
+    if source_type == "earnings_call_transcript":
+        full_text = raw_text[:MAX_TRANSCRIPT_CHARS]
+        remarks, qa_text = _split_transcript(full_text)
+
+        # Summarise prepared remarks with the standard prompt
+        remarks_payload = _call_summary_llm(
+            DOC_SUMMARY_PROMPT.format(
+                source_type=source_type, company=company, title=title, period=period,
+                text=remarks[:MAX_RAW_TEXT_CHARS],
+            ),
+            remarks, title,
+        )
+
+        merged_summary = remarks_payload.get("summary_text", "")
+        merged_signals = remarks_payload.get("structured_signals", {})
+
+        if qa_text.strip():
+            # Summarise Q&A separately to preserve management answer substance
+            qa_payload = _call_summary_llm(
+                TRANSCRIPT_QA_PROMPT.format(
+                    company=company, period=period,
+                    text=qa_text[:MAX_RAW_TEXT_CHARS],
+                ),
+                qa_text, title + " [Q&A]",
+            )
+            qa_signals = qa_payload.get("structured_signals", {})
+            merged_signals = _merge_signals(merged_signals, qa_signals)
+            # Append Q&A summary sentence so the insight engine knows it exists
+            qa_summary = qa_payload.get("summary_text", "").strip()
+            if qa_summary:
+                merged_summary = merged_summary.rstrip(".") + ". Q&A: " + qa_summary
+
+        doc["summary_text"] = merged_summary
+        doc["structured_signals"] = merged_signals
+    else:
+        truncated = raw_text[:MAX_RAW_TEXT_CHARS]
+        payload = _call_summary_llm(
+            DOC_SUMMARY_PROMPT.format(
+                source_type=source_type, company=company, title=title, period=period,
+                text=truncated,
+            ),
+            truncated, title,
+        )
         doc["summary_text"] = payload.get("summary_text", "")
         doc["structured_signals"] = payload.get("structured_signals", {})
-    except Exception as e:
-        print(f"[company_documents] Summary extraction failed for '{doc.get('title', '')}': {e}")
-        doc["summary_text"] = raw_text[:1200]
-        doc["structured_signals"] = {}
 
     return doc
 
@@ -197,6 +314,7 @@ def _normalize_source_doc(company: str, source_type: str, source_group: str, tit
                           source_url: str, published_at: str = "", ticker: str = "", cik: str = "",
                           fiscal_period: str = "", fiscal_year=None) -> dict:
     domain = urlparse(source_url).netloc.lower() if source_url else ""
+    char_limit = MAX_TRANSCRIPT_CHARS if source_type == "earnings_call_transcript" else MAX_RAW_TEXT_CHARS
     return {
         "company": company,
         "ticker": ticker,
@@ -206,7 +324,7 @@ def _normalize_source_doc(company: str, source_type: str, source_group: str, tit
         "source_type": source_type,
         "source_group": source_group,
         "title": title[:220],
-        "raw_text": raw_text[:MAX_RAW_TEXT_CHARS],
+        "raw_text": raw_text[:char_limit],
         "summary_text": "",
         "structured_signals": {},
         "source_url": source_url,

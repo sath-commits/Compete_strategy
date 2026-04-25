@@ -534,7 +534,7 @@ async function renderResults(data) {
     console.error('Chart.js failed to load', err);
   }
 
-  renderDomains(trends.domain_distribution, data.job_count);
+  renderDomains(trends.domain_distribution, trends.tagged_jobs || 0, data.job_count);
   renderInsights(insights);
   renderSkills(trends.top_skills);
   if (chartsAvailable) {
@@ -608,14 +608,33 @@ function renderSourceMix(sourceCounts, totalJobs) {
   });
 }
 
-function renderDomains(domains, totalJobs) {
-  if (!domains || !domains.length) return;
+function renderDomains(domains, taggedJobs, totalJobs) {
+  const note = el('domains-coverage-note');
+  if (note) {
+    const tagged = taggedJobs || 0;
+    const total = totalJobs || 0;
+    if (tagged > 0 && total > 0) {
+      note.textContent = `${tagged} of ${total} analyzed jobs mapped into the current strategy taxonomy. Domain percentages below are based on tagged jobs, not all fetched jobs.`;
+      note.classList.remove('hidden');
+    } else if (total > 0) {
+      note.textContent = `None of the ${total} analyzed jobs mapped cleanly into the current strategy taxonomy yet.`;
+      note.classList.remove('hidden');
+    } else {
+      note.textContent = '';
+      note.classList.add('hidden');
+    }
+  }
+
+  if (!domains || !domains.length) {
+    el('domains-pills').innerHTML = '<p style="color:var(--text-3);font-size:0.9rem">No jobs mapped cleanly into the current strategy domains for this run.</p>';
+    return;
+  }
   const max = Math.max(...domains.map(d => d.count));
   el('domains-pills').innerHTML = domains.map(d => `
     <div class="domain-pill">
       <div class="domain-pill-name">${escHtml(d.domain.replace(/_/g, ' '))}</div>
-      <div class="domain-pill-count">${Math.max(1, Math.round((d.count / Math.max(totalJobs || 1, 1)) * 100))}<span class="domain-pill-unit">%</span></div>
-      <div class="domain-pill-sub">${d.count} hiring roles</div>
+      <div class="domain-pill-count">${Math.max(1, Math.round((d.count / Math.max(taggedJobs || 1, 1)) * 100))}<span class="domain-pill-unit">%</span></div>
+      <div class="domain-pill-sub">${d.count} tagged hiring roles</div>
       <div class="domain-pill-bar"><div class="domain-pill-fill" style="width:${Math.round((d.count/max)*100)}%"></div></div>
     </div>`).join('');
 }

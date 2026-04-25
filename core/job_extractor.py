@@ -17,11 +17,34 @@ MAX_JOBS_TO_ANALYZE = int(os.getenv('MAX_JOBS_TO_ANALYZE', '75'))
 MAX_WORKERS = 10
 
 DOMAIN_TAXONOMY = [
-    "mobile_growth", "consumer_growth", "ai_agents", "developer_platform",
-    "ai_infrastructure", "inference_optimization", "model_research",
-    "evaluation_safety", "enterprise_sales", "enterprise_platform",
-    "data_platform", "ml_ops"
+    "software_engineering",      # software dev, backend, frontend, mobile, embedded systems
+    "hardware_engineering",      # mechanical, electrical, aerospace, robotics, avionics, materials
+    "data_analytics",            # data science, analytics, BI, data engineering, SQL, dashboards
+    "ai_ml",                     # AI/ML research, model training, inference, LLMs, evaluation, safety
+    "infrastructure_platform",   # DevOps, SRE, cloud, platform engineering, ML ops, developer tools
+    "product_design",            # product management, UX, UI design, user research
+    "operations_manufacturing",  # manufacturing, supply chain, logistics, facilities, quality, testing
+    "business_commercial",       # sales, marketing, enterprise, business dev, partnerships, GTM
+    "finance_legal",             # finance, accounting, legal, compliance, risk, audit
+    "people_talent",             # HR, recruiting, people ops, compensation, L&D
+    "consumer_growth",           # growth, consumer products, user acquisition, retention, lifecycle
+    "research_science",          # R&D, physics, chemistry, biology, materials science, deep tech
 ]
+
+DOMAIN_DESCRIPTIONS = {
+    "software_engineering": "software dev, backend, frontend, mobile, embedded systems",
+    "hardware_engineering": "mechanical, electrical, aerospace, robotics, avionics, materials",
+    "data_analytics": "data science, analytics, BI, data engineering, SQL, dashboards",
+    "ai_ml": "AI/ML research, model training, inference, LLMs, evaluation, safety",
+    "infrastructure_platform": "DevOps, SRE, cloud, platform engineering, ML ops, developer tools",
+    "product_design": "product management, UX, UI design, user research",
+    "operations_manufacturing": "manufacturing, supply chain, logistics, facilities, quality, testing",
+    "business_commercial": "sales, marketing, enterprise, business dev, partnerships, GTM",
+    "finance_legal": "finance, accounting, legal, compliance, risk, audit",
+    "people_talent": "HR, recruiting, people ops, compensation, L&D",
+    "consumer_growth": "growth, consumer products, user acquisition, retention, lifecycle",
+    "research_science": "R&D, physics, chemistry, biology, materials science, deep tech",
+}
 
 EXTRACT_PROMPT = """You are a competitive intelligence analyst extracting signals from a job posting.
 
@@ -37,7 +60,7 @@ Extract the following and return as a single JSON object:
   "title": "exact job title",
   "team": "team or department name if explicitly mentioned, else empty string",
   "seniority": "one of: intern, junior, mid, senior, staff, principal, manager, director, vp — infer from title keywords (e.g. 'Senior', 'Staff', 'Principal', 'Director', 'VP', 'Intern', 'Associate') OR from experience requirements (0-2 yrs → junior, 3-5 yrs → mid, 5+ yrs → senior). Use 'mid' as default if unclear but clearly not entry-level or leadership",
-  "domain_tags": ["domains from taxonomy below — pick ALL that apply"],
+  "domain_tags": ["domains from taxonomy below — EVERY job must map to at least one domain"],
   "skills": ["technical and soft skills required, max 12"],
   "responsibilities": ["key responsibilities, max 5, be specific not generic"],
   "experience": "experience requirement as a short string",
@@ -49,10 +72,11 @@ Extract the following and return as a single JSON object:
   "business_goals": ["any explicit business objectives stated e.g. 'grow DAU by 2x', 'launch enterprise tier', 'improve onboarding completion' — only if explicitly stated"]
 }}
 
-Domain taxonomy (multi-label — pick ALL that apply):
+Domain taxonomy — pick ALL that apply. EVERY job must have at least one tag:
 {domains}
 
 Rules:
+- domain_tags is REQUIRED and must never be empty — pick the closest match even if imperfect.
 - For metrics, tools_platforms, team_names, business_goals: only extract what is EXPLICITLY mentioned. Do not infer or guess. Empty list is fine.
 - For responsibilities: be specific — include actual numbers or tools mentioned in the description, not generic phrases like "work cross-functionally".
 
@@ -68,11 +92,14 @@ def _extract_single(job, company):
     if not description.strip():
         return None
 
+    domain_list = '\n'.join(
+        f"- {d} ({DOMAIN_DESCRIPTIONS[d]})" for d in DOMAIN_TAXONOMY
+    )
     prompt = EXTRACT_PROMPT.format(
         title=title,
         company=company,
         description=description,
-        domains=', '.join(DOMAIN_TAXONOMY)
+        domains=domain_list,
     )
 
     try:
@@ -83,6 +110,11 @@ def _extract_single(job, company):
             temperature=0
         )
         extracted = json.loads(response.choices[0].message.content)
+        # Guarantee every job has at least one valid domain tag
+        valid_tags = [t for t in extracted.get('domain_tags', []) if t in DOMAIN_TAXONOMY]
+        if not valid_tags:
+            valid_tags = ['software_engineering']
+        extracted['domain_tags'] = valid_tags
         extracted['raw_description'] = description
         extracted['job_url'] = job_url
         return extracted

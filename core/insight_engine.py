@@ -201,6 +201,15 @@ def _serialize_company_docs_for_prompt(company_docs):
             lines.append(f"Management priorities: {', '.join(signals['management_priorities'])}")
         if signals.get('qa_topics'):
             lines.append(f"Q&A topics: {', '.join(signals['qa_topics'])}")
+        if signals.get('key_quotes'):
+            lines.append("Key management quotes:")
+            for q in signals['key_quotes'][:6]:
+                if isinstance(q, dict):
+                    speaker = q.get('speaker', '')
+                    text = q.get('quote', '')
+                    lines.append(f'  [{speaker}]: "{text}"' if speaker else f'  "{text}"')
+                else:
+                    lines.append(f'  "{q}"')
         lines.append("")
     return "\n".join(lines)
 
@@ -331,8 +340,16 @@ def _summarize_official_patterns(company_docs):
             values = signals.get(field) or []
             if values:
                 lines.append(f"  {field}: {', '.join(values[:4])}")
+        if signals.get('key_quotes'):
+            for q in signals['key_quotes'][:3]:
+                if isinstance(q, dict):
+                    speaker = q.get('speaker', '')
+                    text = _clean_text(q.get('quote', ''))[:200]
+                    lines.append(f'  quote [{speaker}]: "{text}"' if speaker else f'  quote: "{text}"')
+                else:
+                    lines.append(f'  quote: "{_clean_text(q)[:200]}"')
         if doc.get('summary_text'):
-            lines.append(f"  summary: {_clean_text(doc.get('summary_text'))[:280]}")
+            lines.append(f"  summary: {_clean_text(doc.get('summary_text'))[:400]}")
     return "\n".join(lines)
 
 
