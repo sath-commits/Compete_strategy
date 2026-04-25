@@ -9,7 +9,7 @@ load_dotenv()
 
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 EXTRACTION_MODEL = os.getenv('JOB_EXTRACTION_MODEL', 'gpt-4o-mini')
-MAX_JOBS_TO_ANALYZE = int(os.getenv('MAX_JOBS_TO_ANALYZE', '50'))
+MAX_JOBS_TO_ANALYZE = int(os.getenv('MAX_JOBS_TO_ANALYZE', '75'))
 
 # How many jobs to extract simultaneously.
 # 10 parallel threads = ~10x faster than sequential.

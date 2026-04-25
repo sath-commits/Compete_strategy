@@ -353,6 +353,8 @@ def _generate_final_strategy_readout(company, jobs, company_docs):
         "- Respect the source hierarchy above when signals conflict.\n"
         "- Jobs are more important than product docs, changelogs, pricing pages, customer stories, partner pages, and newsroom posts.\n"
         "- Prefer repeated management commentary from earnings calls and filings over lighter-weight sources.\n"
+        "- If the only official materials are lightweight sources such as GitHub releases, changelogs, or newsroom posts, do not let them override stronger repeated hiring patterns.\n"
+        "- If official sources are limited or narrow, the readout should lead with the clearest hiring pattern instead of over-centering those sources.\n"
         "- If hiring confirms a management signal, say so explicitly.\n"
         "- If official sources are sparse, still use the hierarchy rather than treating all sources equally.\n"
         "- Use the exact output format from the system prompt.\n"
@@ -394,6 +396,38 @@ def _generate_final_strategy_readout(company, jobs, company_docs):
     except Exception as e:
         print(f"[insight_engine] Error generating final strategy readout: {e}")
         return None
+
+
+def _is_lightweight_official_source(source_type: str) -> bool:
+    return source_type in {'github_release', 'changelog', 'newsroom_post'}
+
+
+def _choose_primary_insight(insights):
+    if not insights:
+        return None, []
+
+    strategic = next((ins for ins in insights if ins.get('domain') == 'strategic_readout'), None)
+    if strategic:
+        evidence_types = {e.get('source_type', 'job') for e in (strategic.get('evidence') or [])}
+        has_jobs = 'job' in evidence_types
+        has_strong_official = any(
+            source_type != 'job'
+            and SOURCE_PRIORITY.get(source_type, 0) >= SOURCE_PRIORITY['job']
+            and not _is_lightweight_official_source(source_type)
+            for source_type in evidence_types
+        )
+        if has_jobs or has_strong_official:
+            return strategic, [ins for ins in insights if ins is not strategic]
+
+    strongest_hiring = next(
+        (ins for ins in insights if ins.get('domain') not in {'official_signals', 'strategic_readout'}),
+        None
+    )
+    if strongest_hiring:
+        return strongest_hiring, [ins for ins in insights if ins is not strongest_hiring]
+
+    primary = insights[0]
+    return primary, insights[1:]
 
 
 def generate_insights(company, jobs, company_docs=None):
@@ -438,8 +472,11 @@ def generate_insights(company, jobs, company_docs=None):
         insert_at = 1 if final_readout else 0
         all_insights.insert(insert_at, official_insight)
 
-    if all_insights:
-        save_insights(all_insights)
+    primary_insight, remaining_insights = _choose_primary_insight(all_insights)
+    ordered_insights = ([primary_insight] if primary_insight else []) + remaining_insights
 
-    print(f"[insight_engine] Generated {len(all_insights)} insights for '{company}'")
-    return all_insights
+    if ordered_insights:
+        save_insights(ordered_insights)
+
+    print(f"[insight_engine] Generated {len(ordered_insights)} insights for '{company}'")
+    return ordered_insights

@@ -181,11 +181,22 @@
     .res-summary .share-bar-label strong { color: rgba(255,255,255,0.75); }
     .res-summary .btn-share { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.12); color: rgba(255,255,255,0.7); }
     .res-summary .btn-share:hover { background: var(--lime); border-color: var(--lime); color: var(--black); }
-
-    .overview-grid {
-      display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.95fr);
-      gap: 22px; align-items: start;
+    .res-priority-note {
+      margin-top: 16px; padding: 14px 16px; border-radius: 16px;
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1);
+      display: flex; align-items: flex-start; gap: 12px;
     }
+    .res-priority-icon {
+      width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0;
+      background: rgba(197,241,53,0.14); color: var(--lime);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 0.9rem;
+    }
+    .res-priority-copy strong { color: var(--white); }
+    .res-priority-copy {
+      font-size: 0.88rem; line-height: 1.55; color: rgba(255,255,255,0.72);
+    }
+
     .featured-insight-wrap { margin-top: 18px; }
     .featured-insight-card {
       background: var(--white); border: 1.5px solid var(--border); border-radius: 24px;
@@ -219,11 +230,6 @@
       font-weight: 700; color: var(--text-2); cursor: pointer;
     }
     .featured-support:hover { border-color: var(--black); color: var(--black); }
-    .main-grid {
-      display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.9fr);
-      gap: 22px; align-items: start;
-    }
-    .main-stack { display: flex; flex-direction: column; gap: 22px; }
     .section-card {
       background: transparent; border: 1px solid var(--border); border-radius: 22px; padding: 24px;
     }
@@ -319,12 +325,11 @@
     .skill-fill { height: 6px; background: var(--black); border-radius: 3px; }
 
     /* Hiring breakdown grid */
-    .breakdown-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+    .breakdown-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: start; }
 
     /* ── Chat ── */
     .chat-panel {
       background: var(--white); border: 1px solid var(--border); border-radius: 22px; overflow: hidden;
-      position: sticky; top: 84px;
     }
     .chat-panel-head {
       padding: 18px 20px 16px; border-bottom: 1px solid var(--border);
@@ -347,10 +352,10 @@
     }
     .chat-window {
       background: linear-gradient(180deg, #fbfaf6 0%, #f7f3eb 100%);
-      height: 460px; overflow-y: auto;
+      height: 380px; overflow-y: auto;
       padding: 18px; display: flex; flex-direction: column; gap: 14px;
     }
-    .msg-row { display: flex; flex-direction: column; gap: 6px; max-width: 88%; }
+    .msg-row { display: flex; flex-direction: column; gap: 6px; max-width: min(760px, 100%); }
     .msg-row-user { align-self: flex-end; align-items: flex-end; }
     .msg-row-bot { align-self: flex-start; align-items: flex-start; }
     .msg-meta {
@@ -472,10 +477,13 @@
     }
 
     /* Suggested question chips */
-    .suggested-qs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; align-self: flex-start; max-width: 100%; }
+    .suggested-qs {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+      margin-top: 2px; align-self: stretch; max-width: 100%;
+    }
     .sq-chip {
       background: rgba(255,255,255,0.9); border: 1.5px solid var(--border);
-      border-radius: 999px; padding: 8px 13px;
+      border-radius: 16px; padding: 10px 13px;
       font-family: 'Inter', sans-serif; font-size: 0.8rem;
       font-weight: 500; color: var(--text-2); cursor: pointer;
       transition: all 0.15s; text-align: left; line-height: 1.3;
@@ -513,16 +521,17 @@
       .stats-row { gap: 10px; }
       .stat-card { padding: 14px 16px; min-width: 100px; }
       .stat-num { font-size: 1.7rem; }
+      .res-priority-note { padding: 12px 14px; }
       .domains-pills { grid-template-columns: repeat(2, 1fr); gap: 8px; }
       .domain-pill { padding: 12px 14px; }
       .domain-pill-count { font-size: 1.3rem; }
-      .overview-grid, .main-grid { grid-template-columns: 1fr; }
       .section-card, .featured-insight-card { padding: 18px; }
       .insight-card-top { flex-direction: column-reverse; }
       .insight-aside { flex-direction: row; justify-content: space-between; width: 100%; }
       .breakdown-grid { grid-template-columns: 1fr; gap: 16px; }
-      .chat-panel { position: static; }
       .chat-window { height: 340px; }
+      .msg-row { max-width: 100%; }
+      .suggested-qs { grid-template-columns: 1fr; }
       .chat-input-row { padding: 10px; }
       .btn-send { padding: 8px 14px; font-size: 0.8rem; }
     }
@@ -693,6 +702,12 @@
           <div class="stat-lbl"><i class="bi bi-lightbulb"></i> Insights Generated</div>
         </div>
       </div>
+      <div class="res-priority-note">
+        <div class="res-priority-icon"><i class="bi bi-briefcase-fill"></i></div>
+        <div class="res-priority-copy">
+          <strong>Hiring data is the primary signal in this product.</strong> Official company materials are used mainly to confirm, refine, or challenge what the job-market footprint already suggests.
+        </div>
+      </div>
       <div id="share-bar" class="share-bar hidden">
         <span class="share-bar-label">Share analysis for <strong id="share-company-name"></strong></span>
         <div class="share-btns">
@@ -710,7 +725,7 @@
     <div class="container">
       <div class="res-block-header">
         <h2 class="res-block-title"><span class="ti"><i class="bi bi-diagram-3-fill"></i></span> Strategic Domains</h2>
-        <p class="res-block-sub">Where the strongest signals cluster across hiring, filings, investor materials, and official product updates</p>
+        <p class="res-block-sub">Where hiring demand clusters most heavily, with official sources used as supporting context when available</p>
       </div>
       <div id="domains-pills" class="domains-pills"></div>
     </div>
@@ -719,81 +734,76 @@
   <!-- 3. Strategic Readout -->
   <div class="res-block">
     <div class="container">
-      <div class="overview-grid">
-        <div>
-          <div class="res-block-header">
-            <h2 class="res-block-title"><span class="ti"><i class="bi bi-lightbulb-fill"></i></span> Strategic Readout</h2>
-            <p class="res-block-sub">The strongest company-level interpretation from the hiring and official signals in this run</p>
-          </div>
-          <div id="featured-insight" class="featured-insight-wrap"></div>
-        </div>
-        <div class="section-card">
-          <div class="res-block-header" style="margin-bottom:14px">
-            <h2 class="res-block-title"><span class="ti"><i class="bi bi-chat-dots-fill"></i></span> Chat About <span id="chat-company-name">This Company</span></h2>
-            <p class="res-block-sub">Ask follow-up questions grounded in the data fetched for this company, not generic AI chat.</p>
-          </div>
-          <div class="chat-panel">
-            <div class="chat-panel-head">
-              <div class="chat-title-row">
-                <span class="chat-title-badge"><i class="bi bi-chat-dots-fill"></i></span>
-                <div class="chat-title">Company Signal Chat</div>
-              </div>
-              <div class="chat-context" id="chat-context-copy">Grounded in this company’s jobs, filings, investor materials, and official product signals.</div>
-              <div class="chat-context-chip-row">
-                <span class="chat-context-chip" id="chat-chip-company">Company search</span>
-                <span class="chat-context-chip">Source-grounded</span>
-                <span class="chat-context-chip">Evidence-backed</span>
-              </div>
-            </div>
-            <div class="chat-window" id="chat-window"></div>
-            <div class="chat-input-row">
-              <div class="chat-composer">
-                <i class="bi bi-chat-dots" style="color:#AAAAAA;flex-shrink:0"></i>
-                <input id="chat-input" class="chat-input" type="text"
-                  placeholder="Ask about this company's strategy, product direction, or investor signals..." />
-              </div>
-              <button class="btn-send" onclick="sendChat()">Send <i class="bi bi-arrow-right"></i></button>
-            </div>
-          </div>
-        </div>
+      <div class="res-block-header">
+        <h2 class="res-block-title"><span class="ti"><i class="bi bi-lightbulb-fill"></i></span> Strategic Readout</h2>
+        <p class="res-block-sub">The strongest company-level interpretation, led by hiring patterns and sharpened by official evidence when useful</p>
       </div>
+      <div id="featured-insight" class="featured-insight-wrap"></div>
     </div>
   </div>
 
   <!-- 4. Supporting Insights + Breakdown -->
   <div class="res-block res-block--alt">
     <div class="container">
-      <div class="main-grid">
-        <div class="main-stack">
-          <div>
-            <div class="res-block-header">
-              <h2 class="res-block-title"><span class="ti"><i class="bi bi-stack"></i></span> Supporting Insights</h2>
-              <p class="res-block-sub">The domain-level cards, confidence scores, and supporting sources behind the overall read</p>
-            </div>
-            <div id="insights-list" class="insights-stack"></div>
+      <div class="res-block-header">
+        <h2 class="res-block-title"><span class="ti"><i class="bi bi-stack"></i></span> Supporting Insights</h2>
+        <p class="res-block-sub">The domain-level hiring reads, confidence scores, and corroborating sources behind the overall interpretation</p>
+      </div>
+      <div id="insights-list" class="insights-stack"></div>
+    </div>
+  </div>
+
+  <div class="res-block">
+    <div class="container">
+      <div class="section-card">
+        <div class="res-block-header" style="margin-bottom:18px">
+          <h2 class="res-block-title"><span class="ti"><i class="bi bi-bar-chart-fill"></i></span> Signal Breakdown</h2>
+          <p class="res-block-sub">How the hiring footprint breaks down across domains, sources, and seniority.</p>
+        </div>
+        <div class="breakdown-grid">
+          <div class="card">
+            <div class="card-title"><i class="bi bi-code-slash"></i> Top Skills in Demand</div>
+            <div id="skills-list"></div>
+          </div>
+          <div class="card">
+            <div class="card-title"><i class="bi bi-collection-fill"></i> Hiring vs Supporting Sources</div>
+            <canvas id="source-mix-chart" height="220"></canvas>
+          </div>
+          <div class="card">
+            <div class="card-title"><i class="bi bi-people-fill"></i> Seniority Mix</div>
+            <canvas id="seniority-chart" height="220"></canvas>
           </div>
         </div>
-        <div class="main-stack">
-          <div class="section-card">
-            <div class="res-block-header" style="margin-bottom:18px">
-              <h2 class="res-block-title"><span class="ti"><i class="bi bi-bar-chart-fill"></i></span> Signal Breakdown</h2>
-              <p class="res-block-sub">How the signal mix is distributed across roles, sources, and seniority.</p>
-            </div>
-            <div class="breakdown-grid">
-              <div class="card">
-                <div class="card-title"><i class="bi bi-code-slash"></i> Top Skills in Demand</div>
-                <div id="skills-list"></div>
-              </div>
-              <div class="card">
-                <div class="card-title"><i class="bi bi-collection-fill"></i> Source Mix</div>
-                <canvas id="source-mix-chart" height="220"></canvas>
-              </div>
-              <div class="card">
-                <div class="card-title"><i class="bi bi-people-fill"></i> Seniority Mix</div>
-                <canvas id="seniority-chart" height="220"></canvas>
-              </div>
-            </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="res-block res-block--chat">
+    <div class="container">
+      <div class="res-block-header">
+        <h2 class="res-block-title"><span class="ti"><i class="bi bi-chat-dots-fill"></i></span> Chat About <span id="chat-company-name">This Company</span></h2>
+        <p class="res-block-sub">Ask follow-up questions grounded first in hiring data, then in the official materials collected for this company.</p>
+      </div>
+      <div class="chat-panel">
+        <div class="chat-panel-head">
+          <div class="chat-title-row">
+            <span class="chat-title-badge"><i class="bi bi-chat-dots-fill"></i></span>
+            <div class="chat-title">Company Signal Chat</div>
           </div>
+          <div class="chat-context" id="chat-context-copy">Grounded first in this company’s job footprint, then in any investor, filing, or official product signals collected.</div>
+          <div class="chat-context-chip-row">
+            <span class="chat-context-chip" id="chat-chip-company">Company search</span>
+            <span class="chat-context-chip">Source-grounded</span>
+          </div>
+        </div>
+        <div class="chat-window" id="chat-window"></div>
+        <div class="chat-input-row">
+          <div class="chat-composer">
+            <i class="bi bi-chat-dots" style="color:#AAAAAA;flex-shrink:0"></i>
+            <input id="chat-input" class="chat-input" type="text"
+              placeholder="Ask about this company's strategy, product direction, or investor signals..." />
+          </div>
+          <button class="btn-send" onclick="sendChat()">Send <i class="bi bi-arrow-right"></i></button>
         </div>
       </div>
     </div>

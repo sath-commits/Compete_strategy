@@ -13,6 +13,7 @@ let loadingProgressTimer = null;
 let loadingStartedAt = 0;
 let chartJsPromise = null;
 let currentFeaturedInsight = null;
+let currentJobCount = 0;
 
 /* Tell browser we manage scroll restoration ourselves */
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
@@ -440,6 +441,7 @@ async function finishAnalysis(company, data) {
   stopLoadingSteps();
   currentCompany = company;
   currentSourceStatus = data.source_status || null;
+  currentJobCount = data.job_count || 0;
   chatHistory = [];
 
   await renderResults(data);
@@ -448,10 +450,10 @@ async function finishAnalysis(company, data) {
   el('chat-window').innerHTML = '';
   el('chat-company-name').textContent = company;
   el('chat-chip-company').textContent = company;
-  el('chat-context-copy').textContent = `Grounded in ${data.job_count} analyzed roles${currentSourceStatus?.doc_count ? ` and ${currentSourceStatus.doc_count} official sources` : ''} for ${company}.`;
+  el('chat-context-copy').textContent = `Grounded first in ${data.job_count} analyzed roles${currentSourceStatus?.doc_count ? `, then in ${currentSourceStatus.doc_count} official sources` : ''} for ${company}.`;
 
   const sourceMessage = currentSourceStatus?.mode === 'mixed_sources'
-    ? 'I also pulled in official company materials for added context.'
+    ? 'I also pulled in official company materials to corroborate or refine the hiring read.'
     : 'This run is grounded in hiring signals only.';
   const sourceCountText = currentSourceStatus?.doc_count
     ? ` and **${currentSourceStatus.doc_count} official source documents**`
@@ -460,7 +462,7 @@ async function finishAnalysis(company, data) {
   appendBotMessage(
     `Analyzed **${data.job_count} job postings**${sourceCountText} for **${company}**. ` +
     `Found signals across ${data.trends.domain_distribution.length} strategic domains. ` +
-    `${sourceMessage} Ask me anything about their strategy, product direction, or competitive posture.`,
+    `${sourceMessage} Ask me anything about what the hiring footprint suggests they are prioritizing.`,
     []
   );
 
@@ -488,10 +490,10 @@ function renderSuggestedQuestions(company) {
   const win = el('chat-window');
   const chips = [
     `What is ${company} most likely building in the next 2–4 quarters?`,
-    `Which signals matter most if I compete with ${company}?`,
-    `What technical and product capabilities is ${company} prioritizing?`,
+    `What do the hiring patterns say matters most at ${company}?`,
+    `What technical and product capabilities is ${company} hiring for most aggressively?`,
     currentSourceStatus?.mode === 'mixed_sources'
-      ? `How do the hiring and official signals reinforce each other?`
+      ? `Where do the official sources reinforce the hiring signal?`
       : `How is ${company} approaching enterprise sales?`,
   ];
 
@@ -536,7 +538,7 @@ async function renderResults(data) {
   renderInsights(insights);
   renderSkills(trends.top_skills);
   if (chartsAvailable) {
-    renderSourceMix(currentSourceStatus?.source_counts || {});
+    renderSourceMix(currentSourceStatus?.source_counts || {}, data.job_count);
     renderSeniorityChart(trends.seniority_distribution);
   }
 
@@ -568,18 +570,19 @@ function showChartFallback(canvasId, message) {
   canvas.parentNode.appendChild(msg);
 }
 
-function renderSourceMix(sourceCounts) {
+function renderSourceMix(sourceCounts, totalJobs) {
   const ctx = el('source-mix-chart').getContext('2d');
   if (sourceMixChart) sourceMixChart.destroy();
   ctx.canvas.parentNode.querySelectorAll('.source-mix-fallback').forEach(n => n.remove());
 
   const entries = Object.entries(sourceCounts || {});
-  if (!entries.length) {
+  const combinedEntries = totalJobs ? [['job', totalJobs], ...entries] : entries;
+  if (!combinedEntries.length) {
     ctx.canvas.style.display = 'none';
     const msg = document.createElement('p');
     msg.className = 'source-mix-fallback';
     msg.style.cssText = 'font-size:0.82rem;color:var(--text-3);margin-top:8px';
-    msg.textContent = 'No official source documents were added for this run.';
+    msg.textContent = 'No signal mix data is available for this run.';
     ctx.canvas.parentNode.appendChild(msg);
     return;
   }
@@ -589,10 +592,10 @@ function renderSourceMix(sourceCounts) {
   sourceMixChart = new Chart(ctx, {
     type: 'doughnut',
     data: {
-      labels: entries.map(([key]) => prettySourceType(key)),
+      labels: combinedEntries.map(([key]) => prettySourceType(key)),
       datasets: [{
-        data: entries.map(([, count]) => count),
-        backgroundColor: entries.map((_, i) => palette[i % palette.length]),
+        data: combinedEntries.map(([, count]) => count),
+        backgroundColor: combinedEntries.map((_, i) => palette[i % palette.length]),
         borderWidth: 2,
         borderColor: '#FFFFFF'
       }]
@@ -612,7 +615,7 @@ function renderDomains(domains, totalJobs) {
     <div class="domain-pill">
       <div class="domain-pill-name">${escHtml(d.domain.replace(/_/g, ' '))}</div>
       <div class="domain-pill-count">${Math.max(1, Math.round((d.count / Math.max(totalJobs || 1, 1)) * 100))}<span class="domain-pill-unit">%</span></div>
-      <div class="domain-pill-sub">${d.count} roles</div>
+      <div class="domain-pill-sub">${d.count} hiring roles</div>
       <div class="domain-pill-bar"><div class="domain-pill-fill" style="width:${Math.round((d.count/max)*100)}%"></div></div>
     </div>`).join('');
 }
@@ -695,10 +698,16 @@ function toggleCitations(btn) {
 
 function prettySourceType(sourceType) {
   const labels = {
-    job: 'Job posting',
+    job: 'Job posting (primary)',
     quarterly_filing: 'Quarterly filing',
     earnings_release: 'Earnings release',
     earnings_call_transcript: 'Earnings call transcript',
+    shareholder_letter: 'Shareholder letter',
+    investor_day: 'Investor day',
+    pricing_page: 'Pricing page',
+    product_doc: 'Product doc',
+    customer_story: 'Customer story',
+    partner_page: 'Partner page',
     newsroom_post: 'Newsroom post',
     changelog: 'Release notes',
     github_release: 'GitHub release'
@@ -711,8 +720,11 @@ function getInsightSourceTone(evidence) {
   if (!types.length || (types.length === 1 && types[0] === 'job')) {
     return { label: 'Hiring Signal', style: 'background:#EEF1F4;color:#2E3A46' };
   }
+  if (types.includes('job')) {
+    return { label: 'Hiring-Led Synthesis', style: 'background:#E9F8BF;color:#243300' };
+  }
   if (types.length > 1) {
-    return { label: 'Mixed Evidence', style: 'background:#ECE8FF;color:#4B3FA8' };
+    return { label: 'Official Synthesis', style: 'background:#ECE8FF;color:#4B3FA8' };
   }
 
   const labels = {
@@ -728,19 +740,20 @@ function getInsightSourceTone(evidence) {
 
 function renderInsights(insights) {
   currentInsights = insights || [];
-  currentFeaturedInsight = insights && insights.length ? insights[0] : null;
+  currentFeaturedInsight = chooseFeaturedInsight(insights || []);
   renderFeaturedInsight(currentFeaturedInsight);
   const container = el('insights-list');
   if (!insights || !insights.length) {
     container.innerHTML = '<p style="color:var(--text-3);font-size:0.9rem">Not enough data to generate insights. Try a larger company.</p>';
     return;
   }
-  const supportingInsights = insights.slice(1);
+  const supportingInsights = insights.filter(ins => ins !== currentFeaturedInsight);
   if (!supportingInsights.length) {
     container.innerHTML = '';
     return;
   }
   container.innerHTML = supportingInsights.map((ins, i) => {
+    const insightIndex = currentInsights.indexOf(ins);
     const { initiative, confidence, soWhat, citations } = parseInsight(ins.insight_text);
     const domain  = ins.domain.replace(/_/g, ' ');
     const title   = initiative || domain.toUpperCase();
@@ -762,7 +775,7 @@ function renderInsights(insights) {
         </div>
         <div class="insight-aside">
           <span class="confidence-badge conf-${confidence}">${confidence}</span>
-          <button class="btn-copy-inline" onclick="copyInsight(${i + 1})" title="Copy insight"><i class="bi bi-copy"></i></button>
+          <button class="btn-copy-inline" onclick="copyInsight(${insightIndex})" title="Copy insight"><i class="bi bi-copy"></i></button>
         </div>
       </div>
       ${n ? `
@@ -789,6 +802,23 @@ function renderInsights(insights) {
       </div>` : ''}
     </div>`;
   }).join('');
+}
+
+function chooseFeaturedInsight(insights) {
+  if (!insights || !insights.length) return null;
+
+  const strategic = insights.find(ins => ins.domain === 'strategic_readout');
+  if (strategic) {
+    const evidenceTypes = new Set((strategic.evidence || []).map(e => e.source_type || 'job'));
+    const hasJobs = evidenceTypes.has('job');
+    const hasStrongOfficial = [...evidenceTypes].some(type =>
+      type !== 'job' && !['github_release', 'changelog', 'newsroom_post'].includes(type)
+    );
+    if (hasJobs || hasStrongOfficial) return strategic;
+  }
+
+  const strongestHiring = insights.find(ins => !['official_signals', 'strategic_readout'].includes(ins.domain));
+  return strongestHiring || strategic || insights[0];
 }
 
 function renderFeaturedInsight(insight) {
@@ -819,7 +849,7 @@ function renderFeaturedInsight(insight) {
         </div>
         <div class="featured-meta">
           <span class="confidence-badge conf-${confidence}">${confidence}</span>
-          <button class="btn-copy-inline" onclick="copyInsight(0)" title="Copy insight"><i class="bi bi-copy"></i></button>
+          <button class="btn-copy-inline" onclick="copyFeaturedInsight()" title="Copy insight"><i class="bi bi-copy"></i></button>
         </div>
       </div>
       <div class="featured-title">${escHtml(title)}</div>
@@ -1053,6 +1083,14 @@ function copyInsight(i) {
     `${ins.domain.replace(/_/g, ' ').toUpperCase()}\n\n${ins.insight_text}\n\n` +
     `— ${currentCompany} hiring analysis · Read Between The Hires\n${url}`;
   copyToClipboard(message, 'Insight copied!');
+}
+
+function copyFeaturedInsight() {
+  if (!currentFeaturedInsight) return;
+  const idx = currentInsights.indexOf(currentFeaturedInsight);
+  if (idx >= 0) {
+    copyInsight(idx);
+  }
 }
 
 function copyToClipboard(text, successMsg) {
