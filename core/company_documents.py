@@ -33,12 +33,16 @@ GITHUB_API_BASE = "https://api.github.com"
 
 MAX_RAW_TEXT_CHARS = 18000
 MAX_TRANSCRIPT_CHARS = 48000  # transcripts are long; Q&A lives in the second half
-MAX_TOTAL_DOCS = 12
+MAX_TOTAL_DOCS = 16           # raised to fit new source types
 MAX_QUARTERLY_DOCS = 8
 MAX_NEWS_DOCS = 15
 MAX_CHANGELOG_DOCS = 10
 MAX_GITHUB_DOCS = 10
+MAX_ARXIV_DOCS = 8
 MAX_SUMMARY_WORKERS = 6
+
+ARXIV_API_BASE = "https://export.arxiv.org/api/query"
+EDGAR_EFTS_URL = "https://efts.sec.gov/LATEST/search-index"
 
 SOURCE_PRIORITY = {
     "earnings_call_transcript": 100,
@@ -46,7 +50,9 @@ SOURCE_PRIORITY = {
     "investor_day": 96,
     "quarterly_filing": 90,
     "earnings_release": 88,
+    "sec_form_d": 86,           # SEC-filed private placement — date, amount, security type
     "job": 80,
+    "arxiv_paper": 78,          # research papers reveal R&D direction months before launch
     "pricing_page": 74,
     "product_doc": 72,
     "changelog": 70,
@@ -648,6 +654,265 @@ def _fetch_github_documents(company: str, profile: dict, limit: int = MAX_GITHUB
     return docs[:limit]
 
 
+def _parse_form_d_xml(xml_text: str) -> dict:
+    """Extract key fields from a Form D XML filing."""
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return {}
+
+    ns = "http://www.sec.gov/edgar/document/formd"
+
+    def t(path):
+        # Try namespaced first, then bare
+        for prefix in [f"{{{ns}}}", ""]:
+            parts = path.split("/")
+            node = root
+            for part in parts:
+                node = node.find(f"{prefix}{part}")
+                if node is None:
+                    break
+            if node is not None and node.text:
+                return node.text.strip()
+        return ""
+
+    def all_tags(tag):
+        return [el.text.strip() for el in root.iter()
+                if el.tag in (f"{{{ns}}}{tag}", tag) and el.text]
+
+    total_amount = t("offeringData/offeringSalesAmounts/totalOfferingAmount")
+    amount_sold  = t("offeringData/offeringSalesAmounts/totalAmountSold")
+    date_sale    = t("offeringData/dateOfFirstSale/value")
+    is_equity    = t("offeringData/typesOfSecuritiesOffered/isEquityType")
+    is_debt      = t("offeringData/typesOfSecuritiesOffered/isDebtType")
+    exemptions   = all_tags("item")
+
+    security = "Equity" if is_equity == "true" else ("Debt" if is_debt == "true" else "Other")
+
+    # Map SEC exemption codes to plain English
+    exemption_map = {
+        "06b": "Rule 506(b) — private placement, accredited investors",
+        "06c": "Rule 506(c) — publicly advertised, accredited investors only",
+        "04a5": "Rule 4(a)(5) — sales to accredited investors",
+        "02":   "Section 4(a)(2) — private transactions",
+    }
+    readable_exemptions = [exemption_map.get(e.strip(), e) for e in exemptions[:3]]
+
+    def fmt(val):
+        try:
+            return f"${float(val):,.0f}"
+        except (ValueError, TypeError):
+            return val or "not disclosed"
+
+    return {
+        "date_of_first_sale": date_sale,
+        "total_offering_amount": fmt(total_amount),
+        "total_amount_sold": fmt(amount_sold),
+        "security_type": security,
+        "exemptions": ", ".join(readable_exemptions),
+    }
+
+
+def _fetch_form_d_documents(company: str, max_docs: int = 6) -> list:
+    """
+    Fetch Form D (private placement) filings from SEC EDGAR.
+    Free, no API key. Covers US private companies only.
+    Companies must file Form D within 15 days of first sale of any private offering.
+    Signals: date of fundraise, amount raised (if disclosed), security type.
+    Note: investor names are NOT disclosed on Form D.
+    """
+    import xml.etree.ElementTree as ET
+
+    try:
+        resp = requests.get(
+            EDGAR_EFTS_URL,
+            params={
+                "q": f'"{company}"',
+                "forms": "D,D/A",
+                "dateRange": "custom",
+                "startdt": "2018-01-01",
+                "sortby": "file_date",
+                "sortorder": "desc",
+            },
+            headers=_http_headers(),
+            timeout=20,
+        )
+        resp.raise_for_status()
+        hits = resp.json().get("hits", {}).get("hits", [])
+    except Exception as e:
+        print(f"[company_documents] Form D search failed for '{company}': {e}")
+        return []
+
+    target = company.lower()
+    docs = []
+    seen_dates = set()
+
+    for hit in hits[:max_docs * 2]:
+        source = hit.get("_source", {})
+        entity_name = (source.get("entity_name") or "").strip()
+        file_date   = source.get("file_date", "")
+        accession   = source.get("accession_no", "")  # e.g. "0001234567-23-012345"
+
+        # Name filter — accept if either name contains the other
+        norm_entity = entity_name.lower()
+        if target not in norm_entity and norm_entity not in target:
+            continue
+
+        if not accession:
+            continue
+
+        # CIK = first segment of the accession number (issuer filed it themselves)
+        try:
+            cik = int(accession.split("-")[0])
+        except (ValueError, IndexError):
+            continue
+
+        accession_slug = accession.replace("-", "")
+        xml_url = (
+            f"https://www.sec.gov/Archives/edgar/data/"
+            f"{cik}/{accession_slug}/primary_doc.xml"
+        )
+        filing_index_url = (
+            f"https://www.sec.gov/Archives/edgar/data/"
+            f"{cik}/{accession_slug}/{accession}-index.htm"
+        )
+
+        fields = {}
+        try:
+            xml_resp = requests.get(xml_url, headers=_http_headers(), timeout=15)
+            xml_resp.raise_for_status()
+            fields = _parse_form_d_xml(xml_resp.text)
+        except Exception:
+            pass  # fall through to metadata-only doc
+
+        date_key = fields.get("date_of_first_sale") or file_date
+        if date_key in seen_dates:
+            continue
+        seen_dates.add(date_key)
+
+        raw_text = (
+            f"Company: {entity_name}\n"
+            f"Filing type: SEC Form D (private placement)\n"
+            f"Date of first sale: {fields.get('date_of_first_sale') or file_date}\n"
+            f"SEC filing date: {file_date}\n"
+            f"Total offering amount: {fields.get('total_offering_amount', 'not disclosed')}\n"
+            f"Amount sold to date: {fields.get('total_amount_sold', 'not disclosed')}\n"
+            f"Security type: {fields.get('security_type', 'not disclosed')}\n"
+            f"Exemption: {fields.get('exemptions', '')}\n"
+            f"Note: Form D does not disclose investor names.\n"
+        )
+
+        docs.append(_normalize_source_doc(
+            company=company,
+            source_type="sec_form_d",
+            source_group="investor_relations",
+            title=f"{entity_name} — SEC Form D ({fields.get('date_of_first_sale') or file_date})",
+            raw_text=raw_text,
+            source_url=filing_index_url,
+            published_at=fields.get("date_of_first_sale") or file_date,
+        ))
+
+        if len(docs) >= max_docs:
+            break
+
+    print(f"[company_documents] Form D: {len(docs)} filings for '{company}'")
+    return docs
+
+
+def _fetch_arxiv_documents(company: str, max_results: int = MAX_ARXIV_DOCS) -> list:
+    """
+    Search arXiv for recent papers affiliated with the company.
+    No API key required. Searches by affiliation in the last 18 months.
+    Best signal for AI, biotech, and deep-tech companies.
+    """
+    import xml.etree.ElementTree as ET
+    from datetime import timedelta
+
+    # arXiv affiliation search — quotes required for multi-word names
+    query = f'affiliation:"{company}"'
+    try:
+        resp = requests.get(
+            ARXIV_API_BASE,
+            params={
+                "search_query": query,
+                "start": 0,
+                "max_results": max_results,
+                "sortBy": "submittedDate",
+                "sortOrder": "descending",
+            },
+            headers={"User-Agent": SEC_USER_AGENT},
+            timeout=20,
+        )
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"[company_documents] arXiv fetch failed for '{company}': {e}")
+        return []
+
+    try:
+        root = ET.fromstring(resp.text)
+    except ET.ParseError as e:
+        print(f"[company_documents] arXiv XML parse error: {e}")
+        return []
+
+    ns = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
+    cutoff = datetime.utcnow() - timedelta(days=548)  # ~18 months
+
+    docs = []
+    for entry in root.findall("atom:entry", ns):
+        title = (entry.findtext("atom:title", "", ns) or "").replace("\n", " ").strip()
+        abstract = (entry.findtext("atom:summary", "", ns) or "").replace("\n", " ").strip()
+        published_raw = entry.findtext("atom:published", "", ns) or ""
+        paper_url = ""
+        for link in entry.findall("atom:link", ns):
+            if link.get("type") == "text/html":
+                paper_url = link.get("href", "")
+                break
+        if not paper_url:
+            id_text = entry.findtext("atom:id", "", ns) or ""
+            paper_url = id_text.replace("http://arxiv.org/abs/", "https://arxiv.org/abs/")
+
+        authors = [
+            a.findtext("atom:name", "", ns)
+            for a in entry.findall("atom:author", ns)
+        ]
+        categories = [
+            t.get("term", "")
+            for t in entry.findall("atom:category", ns)
+        ]
+
+        # Filter to last 18 months
+        try:
+            pub_dt = datetime.strptime(published_raw[:10], "%Y-%m-%d")
+            if pub_dt < cutoff:
+                continue
+        except ValueError:
+            pass
+
+        if not title or not abstract:
+            continue
+
+        raw_text = (
+            f"Title: {title}\n"
+            f"Authors: {', '.join(authors[:8])}\n"
+            f"Categories: {', '.join(categories)}\n"
+            f"Published: {published_raw[:10]}\n"
+            f"Abstract: {abstract}\n"
+        )
+        docs.append(_normalize_source_doc(
+            company=company,
+            source_type="arxiv_paper",
+            source_group="research",
+            title=title[:220],
+            raw_text=raw_text,
+            source_url=paper_url,
+            published_at=published_raw[:10],
+        ))
+
+    print(f"[company_documents] arXiv: {len(docs)} papers for '{company}'")
+    return docs
+
+
 def fetch_company_documents(company: str, public_company: Optional[dict] = None) -> list:
     public_company = public_company or {}
     profile = get_company_profile(company, public_company)
@@ -680,6 +945,8 @@ def fetch_company_documents(company: str, public_company: Optional[dict] = None)
             ))
 
         futures.append(executor.submit(_fetch_github_documents, company, profile, MAX_GITHUB_DOCS))
+        futures.append(executor.submit(_fetch_crunchbase_documents, company))
+        futures.append(executor.submit(_fetch_arxiv_documents, company))
 
         for future in as_completed(futures):
             try:

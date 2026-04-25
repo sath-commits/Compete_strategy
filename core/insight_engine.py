@@ -21,7 +21,9 @@ SOURCE_PRIORITY = {
     'investor_day': 96,
     'quarterly_filing': 90,
     'earnings_release': 88,
+    'sec_form_d': 86,
     'job': 80,
+    'arxiv_paper': 78,
     'pricing_page': 74,
     'product_doc': 72,
     'changelog': 70,
@@ -133,6 +135,39 @@ def _serialize_jobs_for_prompt(domain_jobs):
     return "\n".join(lines)
 
 
+def _deduped_job_evidence(jobs, limit=6):
+    """
+    Build a deduplicated evidence list from a list of jobs.
+    Jobs with the same title are collapsed into one entry with a count,
+    e.g. 'Forward Deployed Engineer - GPS (×4)'.
+    Picks the entry with the best URL (non-empty preferred).
+    """
+    from collections import OrderedDict
+    seen = OrderedDict()
+    for job in jobs:
+        title = (job.get('title') or '').strip()
+        url = (job.get('job_url') or '').strip()
+        if title not in seen:
+            seen[title] = {'url': url, 'count': 1}
+        else:
+            seen[title]['count'] += 1
+            if not seen[title]['url'] and url:
+                seen[title]['url'] = url
+
+    evidence = []
+    for title, meta in list(seen.items())[:limit]:
+        count = meta['count']
+        label = f"{title} (×{count})" if count > 1 else title
+        evidence.append({
+            'title': title,
+            'url': meta['url'],
+            'source_type': 'job',
+            'label': label,
+            'count': count,
+        })
+    return evidence
+
+
 def _generate_single_insight(company, domain, domain_jobs):
     """Generate one domain insight. Runs in a thread pool."""
     job_block = _serialize_jobs_for_prompt(domain_jobs)
@@ -161,15 +196,7 @@ def _generate_single_insight(company, domain, domain_jobs):
             'company': company,
             'domain': domain,
             'insight_text': response.choices[0].message.content.strip(),
-            'evidence': [
-                {
-                    'title': job.get('title', ''),
-                    'url': job.get('job_url', ''),
-                    'source_type': 'job',
-                    'label': job.get('title', '')
-                }
-                for job in domain_jobs[:6]
-            ]
+            'evidence': _deduped_job_evidence(domain_jobs, limit=6),
         }
     except Exception as e:
         print(f"[insight_engine] Error for domain '{domain}': {e}")

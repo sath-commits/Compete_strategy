@@ -15,7 +15,9 @@ SOURCE_PRIORITY = {
     'investor_day': 96,
     'quarterly_filing': 90,
     'earnings_release': 88,
+    'sec_form_d': 86,
     'job': 80,
+    'arxiv_paper': 78,
     'pricing_page': 74,
     'product_doc': 72,
     'changelog': 70,
@@ -147,12 +149,20 @@ def _format_context_part(doc):
 
 def answer_question(question, company, history):
     """Retrieve relevant source documents via RAG and generate a structured answer."""
-    relevant_docs = search_documents(question, company=company if company else None, n_results=10)
+    try:
+        relevant_docs = search_documents(question, company=company if company else None, n_results=10)
+    except Exception as e:
+        print(f"[rag_answerer] Embeddings search error: {e}")
+        relevant_docs = []
 
     # Embeddings may still be building in the background — fall back to SQLite
     if not relevant_docs and company:
-        print(f"[rag_answerer] Embeddings not ready for '{company}', falling back to SQLite")
-        relevant_docs = _documents_from_sqlite(company)
+        print(f"[rag_answerer] Embeddings empty for '{company}', falling back to SQLite")
+        try:
+            relevant_docs = _documents_from_sqlite(company)
+        except Exception as e:
+            print(f"[rag_answerer] SQLite fallback error: {e}")
+            relevant_docs = []
 
     if not relevant_docs:
         return {
@@ -176,7 +186,6 @@ def answer_question(question, company, history):
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-    # Include last 6 turns of conversation history for context
     for turn in history[-6:]:
         messages.append({"role": turn['role'], "content": turn['content']})
 
@@ -208,7 +217,8 @@ def answer_question(question, company, history):
         return {'answer': answer, 'evidence': evidence}
 
     except Exception as e:
+        print(f"[rag_answerer] LLM error: {e}")
         return {
-            'answer': f"Error generating answer: {str(e)}",
+            'answer': "I ran into an error generating the answer. Please try again.",
             'evidence': []
         }

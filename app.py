@@ -355,7 +355,11 @@ def chat():
     if not question:
         return jsonify({'error': 'Question is required'}), 400
 
-    result = answer_question(question, company, history)
+    try:
+        result = answer_question(question, company, history)
+    except Exception as e:
+        print(f"[chat] Unhandled error: {e}")
+        result = {'answer': 'Something went wrong. Please try again.', 'evidence': []}
     return jsonify(result)
 
 

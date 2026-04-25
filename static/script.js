@@ -230,12 +230,9 @@ async function runAnalysis(resolvedName = null, forceRefresh = false) {
 
   if (!resolvedName) triedNames.clear(); // fresh search = reset loop guard
   const query = resolvedName || rawQuery;
-  const words = query.trim().split(/\s+/);
-  const isSingleShortWord = words.length === 1 && words[0].length <= 4;
-
-  // Only call /resolve for single short ambiguous words (e.g. "dbs", "ms", "gs")
-  // Multi-word queries like "DBS Bank", "open ai", "Goldman Sachs" go straight to analysis
-  if (!resolvedName && isSingleShortWord) {
+  // Always resolve — catches "service now" → "ServiceNow", "open ai" → "OpenAI",
+  // "ms" → ambiguous, etc. The resolver is a cheap GPT call with a local alias fast-path.
+  if (!resolvedName) {
     el('btn-text').classList.add('hidden');
     el('btn-spinner').style.display = 'inline';
     el('analyze-btn').disabled = true;
@@ -269,17 +266,8 @@ async function runAnalysis(resolvedName = null, forceRefresh = false) {
   }
 
   // Normalize capitalization (openai → OpenAI via alias, otherwise Title Case)
-  const ALIASES = {
-    'openai': 'OpenAI', 'open ai': 'OpenAI', 'anthropic': 'Anthropic',
-    'deepmind': 'Google DeepMind', 'google': 'Google', 'meta': 'Meta',
-    'facebook': 'Meta', 'microsoft': 'Microsoft', 'msft': 'Microsoft',
-    'amazon': 'Amazon', 'apple': 'Apple', 'netflix': 'Netflix',
-    'stripe': 'Stripe', 'uber': 'Uber', 'airbnb': 'Airbnb',
-  };
-  const canonical = ALIASES[query.toLowerCase()] ||
-    query.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-
-  await runAnalyze(canonical, forceRefresh);
+  // This fallback only runs if /resolve itself fails (network error etc.)
+  await runAnalyze(query.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '), forceRefresh);
 }
 
 function showDidYouMean(suggestions) {
@@ -715,6 +703,7 @@ function toggleCitations(btn) {
     : `${n} supporting source${n !== 1 ? 's' : ''}`;
 }
 
+
 function prettySourceType(sourceType) {
   const labels = {
     job: 'Job posting (primary)',
@@ -729,7 +718,9 @@ function prettySourceType(sourceType) {
     partner_page: 'Partner page',
     newsroom_post: 'Newsroom post',
     changelog: 'Release notes',
-    github_release: 'GitHub release'
+    github_release: 'GitHub release',
+    sec_form_d: 'SEC Form D (private placement)',
+    arxiv_paper: 'Research paper (arXiv)',
   };
   return labels[sourceType] || sourceType || 'Source';
 }
@@ -753,6 +744,8 @@ function getInsightSourceTone(evidence) {
     newsroom_post: { label: 'Newsroom Signal', style: 'background:#F4F0EA;color:#7A5A2A' },
     changelog: { label: 'Release Notes', style: 'background:#FFF9E7;color:#8A6A00' },
     github_release: { label: 'GitHub Signal', style: 'background:#EFEAFB;color:#5B3C9D' },
+    sec_form_d: { label: 'Funding Signal', style: 'background:#FFF0FB;color:#8A1A6A' },
+    arxiv_paper: { label: 'Research Signal', style: 'background:#F0F7FF;color:#1A4A8A' },
   };
   return labels[types[0]] || { label: 'Official Signal', style: 'background:#ECE8FF;color:#4B3FA8' };
 }
@@ -813,9 +806,10 @@ function renderInsights(insights) {
                 ? `<li><i class="bi bi-file-earmark-text"></i><a href="${escHtml(item.url)}" target="_blank" class="citation-link">${escHtml(content)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`
                 : `<li><i class="bi bi-file-earmark-text"></i><span class="citation-link" style="cursor:default">${escHtml(content)}</span></li>`;
             }
-            const roleTitle = label.split(':')[0].trim();
-            const searchUrl = `https://www.google.com/search?q=${encodeURIComponent('"' + roleTitle + '" ' + currentCompany + ' jobs')}`;
-            return `<li><i class="bi bi-person-badge"></i><a href="${escHtml(searchUrl)}" target="_blank" class="citation-link">${escHtml(label)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`;
+            const jobUrl = item.url || '';
+            return jobUrl
+              ? `<li><i class="bi bi-person-badge"></i><a href="${escHtml(jobUrl)}" target="_blank" class="citation-link">${escHtml(label)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`
+              : `<li><i class="bi bi-person-badge"></i><span class="citation-link" style="cursor:default">${escHtml(label)}</span></li>`;
           }).join('')}
         </ul>
       </div>` : ''}
@@ -889,9 +883,10 @@ function renderFeaturedInsight(insight) {
                 ? `<li><i class="bi bi-file-earmark-text"></i><a href="${escHtml(item.url)}" target="_blank" class="citation-link">${escHtml(content)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`
                 : `<li><i class="bi bi-file-earmark-text"></i><span class="citation-link" style="cursor:default">${escHtml(content)}</span></li>`;
             }
-            const roleTitle = label.split(':')[0].trim();
-            const searchUrl = `https://www.google.com/search?q=${encodeURIComponent('"' + roleTitle + '" ' + currentCompany + ' jobs')}`;
-            return `<li><i class="bi bi-person-badge"></i><a href="${escHtml(searchUrl)}" target="_blank" class="citation-link">${escHtml(label)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`;
+            const jobUrl = item.url || '';
+            return jobUrl
+              ? `<li><i class="bi bi-person-badge"></i><a href="${escHtml(jobUrl)}" target="_blank" class="citation-link">${escHtml(label)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`
+              : `<li><i class="bi bi-person-badge"></i><span class="citation-link" style="cursor:default">${escHtml(label)}</span></li>`;
           }).join('')}
         </ul>
       </div>` : ''}

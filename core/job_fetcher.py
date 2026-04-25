@@ -15,30 +15,62 @@ RESULTS_PER_PAGE = 50
 
 def fetch_jobs(company, num_pages=PAGES_TO_FETCH):
     """
-    Fetch job postings for a company from Adzuna API.
+    Fetch job postings for a company from Adzuna using employer-name filter only.
 
-    Strategy: try company= (employer name match) first — most precise.
-    If that returns nothing, fall back to what_and= (keyword in title/description)
-    for companies that don't post on Adzuna-aggregated boards directly.
-
-    Each page = 1 quota unit. 3 pages × 50 results = up to 150 jobs for 3 calls.
+    We intentionally do NOT fall back to keyword search (what_and/what_phrase)
+    because keyword matching against a company name returns jobs from unrelated
+    employers whose descriptions happen to contain the same words.
     """
-    # Try employer-name match first, then keyword fallback
-    query_variants = [
-        {"company": company},
-        {"what_and": company},
-    ]
-
-    for query_params in query_variants:
-        label = list(query_params.items())[0]
-        all_jobs = _fetch_pages(company, query_params, num_pages)
-        if all_jobs:
-            print(f"[job_fetcher] {label[0]}='{label[1]}' → {len(all_jobs)} jobs")
-            return _normalize(all_jobs)
-        print(f"[job_fetcher] {label[0]}='{label[1]}' → 0 results, trying next variant…")
+    all_jobs = _fetch_pages(company, {"company": company}, num_pages)
+    if all_jobs:
+        validated = _filter_by_company(all_jobs, company)
+        print(f"[job_fetcher] company='{company}' → {len(all_jobs)} raw, {len(validated)} after company filter")
+        return _normalize(validated)
 
     print(f"[job_fetcher] No jobs found for '{company}'")
     return []
+
+
+def _normalize_company_name(name: str) -> str:
+    """Lowercase, strip punctuation and common suffixes for fuzzy company matching."""
+    import re
+    name = name.lower().strip()
+    name = re.sub(r'[^a-z0-9 ]', '', name)
+    for suffix in (' inc', ' ltd', ' llc', ' corp', ' corporation', ' group',
+                   ' co', ' company', ' technologies', ' technology'):
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+    return name.strip()
+
+
+def _filter_by_company(raw_jobs: list, searched_company: str) -> list:
+    """
+    Drop jobs whose employer name clearly doesn't match what we searched for.
+    Adzuna's company= filter is fuzzy and occasionally returns noise.
+    We accept a job if:
+      - the Adzuna company field is empty (some listings omit it), OR
+      - either name is a substring of the other after normalization, OR
+      - the two share at least one significant token (ignoring stop words).
+    """
+    import re
+    target = _normalize_company_name(searched_company)
+    target_tokens = set(target.split())
+    stop_tokens = {'the', 'and', 'of', 'for', 'a', 'an', 'in', 'at', 'on'}
+    target_tokens -= stop_tokens
+
+    filtered = []
+    for job in raw_jobs:
+        employer = (job.get('company') or {}).get('display_name', '') or ''
+        if not employer.strip():
+            filtered.append(job)
+            continue
+        norm_employer = _normalize_company_name(employer)
+        employer_tokens = set(norm_employer.split()) - stop_tokens
+        # Accept if substring match or at least one significant token overlaps
+        if (target in norm_employer or norm_employer in target
+                or bool(target_tokens & employer_tokens)):
+            filtered.append(job)
+    return filtered
 
 
 def _fetch_pages(company, extra_params, num_pages):
