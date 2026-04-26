@@ -10,7 +10,7 @@ load_dotenv()
 
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 DOMAIN_INSIGHT_MODEL = os.getenv('DOMAIN_INSIGHT_MODEL', 'gpt-4o-mini')
-FINAL_SYNTHESIS_MODEL = os.getenv('FINAL_SYNTHESIS_MODEL', 'gpt-5-mini')
+FINAL_SYNTHESIS_MODEL = os.getenv('FINAL_SYNTHESIS_MODEL', 'gpt-4o-mini')
 
 MIN_JOBS_FOR_INSIGHT = 2
 MAX_DOMAIN_INSIGHTS = int(os.getenv('MAX_DOMAIN_INSIGHTS', '5'))

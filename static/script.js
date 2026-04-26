@@ -861,7 +861,7 @@ function renderInsights(insights) {
                 ? `<li><i class="bi bi-file-earmark-text"></i><a href="${escHtml(item.url)}" target="_blank" class="citation-link">${escHtml(content)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`
                 : `<li><i class="bi bi-file-earmark-text"></i><span class="citation-link" style="cursor:default">${escHtml(content)}</span></li>`;
             }
-            const jobUrl = item.url || '';
+            const jobUrl = safeJobUrl(item.url || '', item.label || item.title || '');
             return jobUrl
               ? `<li><i class="bi bi-person-badge"></i><a href="${escHtml(jobUrl)}" target="_blank" class="citation-link">${escHtml(label)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`
               : `<li><i class="bi bi-person-badge"></i><span class="citation-link" style="cursor:default">${escHtml(label)}</span></li>`;
@@ -938,7 +938,7 @@ function renderFeaturedInsight(insight) {
                 ? `<li><i class="bi bi-file-earmark-text"></i><a href="${escHtml(item.url)}" target="_blank" class="citation-link">${escHtml(content)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`
                 : `<li><i class="bi bi-file-earmark-text"></i><span class="citation-link" style="cursor:default">${escHtml(content)}</span></li>`;
             }
-            const jobUrl = item.url || '';
+            const jobUrl = safeJobUrl(item.url || '', item.label || item.title || '');
             return jobUrl
               ? `<li><i class="bi bi-person-badge"></i><a href="${escHtml(jobUrl)}" target="_blank" class="citation-link">${escHtml(label)} <i class="bi bi-box-arrow-up-right" style="font-size:0.6rem;opacity:0.5"></i></a></li>`
               : `<li><i class="bi bi-person-badge"></i><span class="citation-link" style="cursor:default">${escHtml(label)}</span></li>`;
@@ -1018,7 +1018,7 @@ function appendBotMessage(text, evidence) {
         const period = e.period ? ` • ${escHtml(e.period)}` : '';
         const label = `<i class="bi bi-file-earmark-text me-1"></i>${escHtml(e.title)} — ${escHtml(sourceLabel)}${period}`;
         return e.url
-          ? `<a href="${escHtml(e.url)}" target="_blank" class="evidence-link">${label} <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem"></i></a>`
+          ? `<a href="${escHtml(safeJobUrl(e.url, e.title))}" target="_blank" class="evidence-link">${label} <i class="bi bi-box-arrow-up-right" style="font-size:0.65rem"></i></a>`
           : `<span class="evidence-link" style="cursor:default">${label}</span>`;
       }).join('');
     div.appendChild(evDiv);
@@ -1074,6 +1074,14 @@ function escHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Adzuna redirect_url links are click-tracking URLs that trigger bot detection
+// when accessed from third-party apps. Replace them with a Google Jobs search.
+function safeJobUrl(url, title) {
+  if (!url || !url.includes('adzuna.com')) return url;
+  const q = encodeURIComponent((title || '') + (currentCompany ? ' ' + currentCompany : '') + ' jobs');
+  return `https://www.google.com/search?q=${q}&ibp=htl;jobs`;
 }
 
 function renderMarkdown(text) {
