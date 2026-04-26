@@ -3,9 +3,11 @@ import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from functools import lru_cache
 from html import unescape
 from typing import List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
+from urllib.robotparser import RobotFileParser
 
 import requests
 from dotenv import load_dotenv
@@ -123,23 +125,50 @@ Focus ONLY on management answers (CEO, CFO, CPO, division heads), not analyst qu
 
 Return a JSON object with this exact shape:
 {{
-  "summary_text": "3-5 sentences summarising the most strategically important themes management discussed when answering analyst questions.",
+  "summary_text": "3-5 sentences summarising the most strategically important themes management discussed when answering analyst questions. Paraphrase in your own words — do not copy sentences verbatim.",
   "structured_signals": {{
     "focus_areas": ["strategic priorities that came up repeatedly in Q&A"],
     "products_or_initiatives": ["specific products or programs management discussed"],
     "metrics": ["any numbers, guidance, or KPIs management mentioned"],
-    "management_priorities": ["explicit commitments or investments management described"],
-    "qa_topics": ["the distinct topics analysts asked about — be specific, not generic"],
-    "key_quotes": [
-      {{"speaker": "Name and title e.g. 'Reed Hastings, Co-CEO'", "quote": "verbatim or near-verbatim sentence from management revealing strategy or forward plans"}}
-    ]
+    "management_priorities": ["paraphrased commitments or investments management described — do not quote verbatim"],
+    "qa_topics": ["the distinct topics analysts asked about — be specific, not generic"]
   }}
 }}
 
 Rules:
 - Every field must be grounded in the transcript text only.
-- key_quotes: max 6 entries. Speaker must be the management respondent's name and title as they appear in the transcript, not the analyst asking the question.
-- Quotes must be direct management statements, not paraphrases.
+- Paraphrase management statements in your own words. Do not reproduce transcript sentences verbatim.
+- Do not include direct quotes from the transcript.
+- Return valid JSON only."""
+
+TRANSCRIPT_REMARKS_PROMPT = """You are extracting competitive intelligence signals from the prepared-remarks section of an earnings call transcript.
+
+Document type: earnings_call_transcript (prepared remarks)
+Company: {company}
+Title: {title}
+Published period/date: {period}
+
+Transcript text:
+{text}
+
+Return a JSON object with this exact shape:
+{{
+  "summary_text": "A concise 4-8 sentence summary focused on strategy, product direction, partnerships, launches, customer segments, metrics, GTM themes, or management commentary. Paraphrase in your own words — do not copy sentences verbatim.",
+  "structured_signals": {{
+    "focus_areas": ["explicit priorities or strategic themes"],
+    "products_or_initiatives": ["named products, launches, or programs"],
+    "metrics": ["explicitly mentioned metrics, guidance, or KPIs"],
+    "customer_segments": ["explicit customer, vertical, or geography mentions"],
+    "management_priorities": ["paraphrased statements of what the company is investing in or focusing on — do not quote verbatim"],
+    "qa_topics": []
+  }}
+}}
+
+Rules:
+- Ground every field in the transcript text only.
+- Paraphrase management statements in your own words. Do not reproduce transcript sentences verbatim.
+- Do not include direct quotes from the transcript.
+- If a field has no support, return an empty list.
 - Return valid JSON only."""
 
 
@@ -168,6 +197,25 @@ def _html_to_text(html: str) -> str:
     text = unescape(text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+
+@lru_cache(maxsize=64)
+def _robots_allows(url: str) -> bool:
+    """
+    Check robots.txt for the URL's host. Cached per-host to avoid repeat fetches.
+    If robots.txt can't be reached, default to allow (standard behaviour).
+    """
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return False
+        robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
+        rp = RobotFileParser()
+        rp.set_url(robots_url)
+        rp.read()
+        return rp.can_fetch(SEC_USER_AGENT, url)
+    except Exception:
+        return True
 
 
 def _is_allowed_domain(url: str, allowed_domains: list) -> bool:
@@ -274,10 +322,11 @@ def _summarize_document(doc: dict) -> dict:
         full_text = raw_text[:MAX_TRANSCRIPT_CHARS]
         remarks, qa_text = _split_transcript(full_text)
 
-        # Summarise prepared remarks with the standard prompt
+        # Transcripts from third-party providers may have redistribution limits,
+        # so we force paraphrased-only extraction (no verbatim quotes).
         remarks_payload = _call_summary_llm(
-            DOC_SUMMARY_PROMPT.format(
-                source_type=source_type, company=company, title=title, period=period,
+            TRANSCRIPT_REMARKS_PROMPT.format(
+                company=company, title=title, period=period,
                 text=remarks[:MAX_RAW_TEXT_CHARS],
             ),
             remarks, title,
@@ -302,6 +351,10 @@ def _summarize_document(doc: dict) -> dict:
             if qa_summary:
                 merged_summary = merged_summary.rstrip(".") + ". Q&A: " + qa_summary
 
+        # Defensive: strip any verbatim quotes the model may have slipped in.
+        # Transcripts use paraphrased summaries only.
+        if isinstance(merged_signals, dict):
+            merged_signals.pop("key_quotes", None)
         doc["summary_text"] = merged_summary
         doc["structured_signals"] = merged_signals
     else:
@@ -526,6 +579,9 @@ def _score_link(url: str, source_type: str) -> int:
 def _fetch_page_document(company: str, url: str, source_type: str, source_group: str, allowed_domains: list) -> Optional[dict]:
     if not _is_allowed_domain(url, allowed_domains):
         return None
+    if not _robots_allows(url):
+        print(f"[company_documents] robots.txt disallows fetch of '{url}' — skipping")
+        return None
     try:
         html = _fetch_text(url)
     except Exception as e:
@@ -555,6 +611,9 @@ def _crawl_index_pages(company: str, pages: List[str], source_type: str, source_
         if len(docs) >= limit:
             break
         if not _is_allowed_domain(page_url, allowed_domains):
+            continue
+        if not _robots_allows(page_url):
+            print(f"[company_documents] robots.txt disallows index fetch of '{page_url}' — skipping")
             continue
         try:
             html = _fetch_text(page_url)

@@ -188,10 +188,34 @@ def resolve_public_company(company: str) -> dict:
     ticker = _gpt_ticker_lookup(query)
     if ticker and ticker not in ("PRIVATE", "UNKNOWN", ""):
         entry = _lookup_by_ticker(ticker, companies)
-        if entry:
+        if entry and _ticker_name_matches_query(query, entry):
             return {"is_public": True, "company": entry["company"], "ticker": entry["ticker"], "cik": entry["cik"], "match_type": "gpt_ticker"}
+        if entry:
+            print(f"[public_company] GPT ticker {ticker} → '{entry['company']}' does not match query '{query}' — rejecting")
 
     if ticker == "PRIVATE":
         return {"is_public": False, "company": query, "ticker": "", "cik": "", "match_type": "gpt_private"}
 
     return {"is_public": False, "company": query, "ticker": "", "cik": "", "match_type": "not_found"}
+
+
+def _ticker_name_matches_query(query: str, entry: dict) -> bool:
+    """
+    Sanity-check that a GPT-resolved ticker points to a SEC company whose name
+    is recognisably the same as the user's query. Guards against hallucinated
+    tickers that would otherwise cause us to fetch the wrong company's filings.
+
+    Accept if either name is a substring of the other after normalization, OR
+    the two share at least one significant token. Rebrand aliases are handled
+    upstream by REBRAND_ALIASES, so this stricter check is appropriate here.
+    """
+    query_norm = _normalize_company_name(query)
+    entry_norm = entry.get("company_normalized", "")
+    if not query_norm or not entry_norm:
+        return False
+    if query_norm in entry_norm or entry_norm in query_norm:
+        return True
+    stop = {"the", "and", "of", "for", "a", "an", "in", "at", "on"}
+    query_tokens = set(query_norm.split()) - stop
+    entry_tokens = set(entry_norm.split()) - stop
+    return bool(query_tokens & entry_tokens)
