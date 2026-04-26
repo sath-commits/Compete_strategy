@@ -30,9 +30,9 @@ app = Flask(__name__)
 
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'changeme')
 
-# Hard cap on Adzuna calls per month. Default 240 leaves a 10-call safety buffer.
-# Each search fetches 3 pages = 3 quota units. Override with ADZUNA_LIMIT env var.
-ADZUNA_MONTHLY_LIMIT = int(os.getenv('ADZUNA_LIMIT', '240'))
+# Hard cap on JSearch calls per month (200 free/month). Default 190 leaves a safety buffer.
+# Each company search = 1 API call regardless of num_pages. Override with JSEARCH_LIMIT env var.
+JSEARCH_MONTHLY_LIMIT = int(os.getenv('JSEARCH_LIMIT', '190'))
 
 # ── Startup ────────────────────────────────────────────────────────────────────
 # Runs when gunicorn imports this module (and when running locally).
@@ -185,7 +185,7 @@ def _run_analysis_job(job_id: str, company: str, ip: str):
                     }
                 return
 
-            log_api_call('adzuna', company=company, call_type='search')
+            log_api_call('jsearch', company=company, call_type='search')
 
             structured_jobs = extract_and_classify_jobs(raw_jobs, company)
             if not structured_jobs:
@@ -307,8 +307,8 @@ def analyze():
         }), 429
 
     # ── Circuit breaker ────────────────────────────────────────────────────
-    usage = get_api_usage('adzuna')
-    if usage['this_month'] >= ADZUNA_MONTHLY_LIMIT:
+    usage = get_api_usage('jsearch')
+    if usage['this_month'] >= JSEARCH_MONTHLY_LIMIT:
         return jsonify({
             'error': f'Monthly search limit reached. Fresh searches are paused until '
                      f'the 1st of next month. You can still search companies already analysed.'
