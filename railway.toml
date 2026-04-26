@@ -5,5 +5,5 @@ builder = "nixpacks"
 startCommand = "gunicorn --workers 1 --threads 4 --timeout 120 app:app"
 healthcheckPath = "/ping"
 healthcheckTimeout = 300
-restartPolicyType = "on-failure"
+restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
