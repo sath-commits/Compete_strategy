@@ -94,7 +94,7 @@ def _documents_from_sqlite(company, n=10):
         {
             'source_type': 'job',
             'title': j.get('title', ''),
-            'company': j.get('company', company),
+            'company': j.get('company') or company,
             'seniority': j.get('seniority', ''),
             'domain_tags': j.get('domain_tags', []),
             'skills': j.get('skills', []),
@@ -111,7 +111,7 @@ def _documents_from_sqlite(company, n=10):
         {
             'source_type': doc.get('source_type', 'company_document'),
             'title': doc.get('title', ''),
-            'company': doc.get('company', company),
+            'company': doc.get('company') or company,
             'seniority': '',
             'domain_tags': [],
             'skills': [],

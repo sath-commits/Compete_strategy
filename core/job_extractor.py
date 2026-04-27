@@ -123,7 +123,7 @@ def _extract_single(job, company):
         return {
             'company': company, 'title': title,
             'team': '', 'seniority': '',
-            'domain_tags': [], 'skills': [], 'responsibilities': [],
+            'domain_tags': ['software_engineering'], 'skills': [], 'responsibilities': [],
             'experience': '', 'location': '',
             'metrics': [], 'tools_platforms': [], 'team_names': [], 'business_goals': [],
             'raw_description': description, 'job_url': job_url

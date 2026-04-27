@@ -203,9 +203,9 @@ def resolve_company(query: str) -> dict:
         return result
     except Exception as e:
         print(f"[company_resolver] Error: {e}")
-        # Fallback: treat as clear with the raw query
+        # Fallback: treat as clear with the raw query, preserving original casing
         return {
             'status': 'clear',
-            'canonical': query.strip().title(),
+            'canonical': query.strip(),
             'alternatives': []
         }

@@ -118,6 +118,17 @@ def init_db():
         except Exception:
             pass  # column already exists — safe to ignore
 
+    # Indexes for frequently-queried columns (safe to re-run via IF NOT EXISTS)
+    conn.executescript('''
+        CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS idx_jobs_date_fetched ON jobs(date_fetched);
+        CREATE INDEX IF NOT EXISTS idx_company_docs_company ON company_documents(company COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS idx_company_docs_date ON company_documents(date_fetched);
+        CREATE INDEX IF NOT EXISTS idx_insights_company ON insights(company COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS idx_api_usage_service ON api_usage(service);
+        CREATE INDEX IF NOT EXISTS idx_searches_created ON searches(created_at);
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -295,7 +306,7 @@ def get_api_usage(service='jsearch'):
     ).fetchone()['n']
     this_month = conn.execute(
         "SELECT COUNT(*) as n FROM api_usage WHERE service = ? "
-        "AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')",
+        "AND strftime('%Y-%m', created_at, 'localtime') = strftime('%Y-%m', 'now', 'localtime')",
         (service,)
     ).fetchone()['n']
     conn.close()
@@ -333,7 +344,7 @@ def get_cached_company_documents(company):
     conn = get_conn()
     rows = conn.execute(
         'SELECT * FROM company_documents WHERE LOWER(company) = LOWER(?) AND date_fetched >= ? '
-        'ORDER BY COALESCE(published_at, "") DESC, fiscal_year DESC, fiscal_period DESC, created_at DESC',
+        'ORDER BY COALESCE(published_at, "") DESC, COALESCE(fiscal_year, 0) DESC, fiscal_period DESC, created_at DESC',
         (company, cutoff)
     ).fetchall()
     if not rows:
@@ -399,35 +410,39 @@ def save_company_documents(documents):
     conn = get_conn()
     today = datetime.now().strftime('%Y-%m-%d')
     company = documents[0].get('company', '')
-    conn.execute('DELETE FROM company_documents WHERE LOWER(company) = LOWER(?)', (company,))
-
-    for doc in documents:
-        conn.execute('''
-            INSERT INTO company_documents (
-                company, ticker, cik, fiscal_period, fiscal_year, source_type, source_group,
-                title, raw_text, summary_text, structured_signals, source_url, published_at,
-                source_domain, date_fetched
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            doc.get('company', ''),
-            doc.get('ticker', ''),
-            doc.get('cik', ''),
-            doc.get('fiscal_period', ''),
-            doc.get('fiscal_year'),
-            doc.get('source_type', ''),
-            doc.get('source_group', ''),
-            doc.get('title', ''),
-            doc.get('raw_text', ''),
-            doc.get('summary_text', ''),
-            json.dumps(doc.get('structured_signals', {})),
-            doc.get('source_url', ''),
-            doc.get('published_at', ''),
-            doc.get('source_domain', ''),
-            today,
-        ))
-
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute('BEGIN')
+        conn.execute('DELETE FROM company_documents WHERE LOWER(company) = LOWER(?)', (company,))
+        for doc in documents:
+            conn.execute('''
+                INSERT INTO company_documents (
+                    company, ticker, cik, fiscal_period, fiscal_year, source_type, source_group,
+                    title, raw_text, summary_text, structured_signals, source_url, published_at,
+                    source_domain, date_fetched
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                doc.get('company', ''),
+                doc.get('ticker', ''),
+                doc.get('cik', ''),
+                doc.get('fiscal_period', ''),
+                doc.get('fiscal_year'),
+                doc.get('source_type', ''),
+                doc.get('source_group', ''),
+                doc.get('title', ''),
+                doc.get('raw_text', ''),
+                doc.get('summary_text', ''),
+                json.dumps(doc.get('structured_signals', {})),
+                doc.get('source_url', ''),
+                doc.get('published_at', ''),
+                doc.get('source_domain', ''),
+                today,
+            ))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def save_quarterly_documents(documents):
@@ -491,18 +506,25 @@ def _parse_quarterly_row(row):
 # ── Insights ───────────────────────────────────────────────────────────────────
 
 def save_insights(insights):
+    if not insights:
+        return
     conn = get_conn()
-    if insights:
-        company = insights[0].get('company', '')
+    company = insights[0].get('company', '')
+    try:
+        conn.execute('BEGIN')
         conn.execute('DELETE FROM insights WHERE LOWER(company) = LOWER(?)', (company,))
-    for ins in insights:
-        conn.execute(
-            'INSERT INTO insights (company, domain, insight_text, evidence) VALUES (?, ?, ?, ?)',
-            (ins.get('company', ''), ins.get('domain', ''),
-             ins.get('insight_text', ''), json.dumps(ins.get('evidence', [])))
-        )
-    conn.commit()
-    conn.close()
+        for ins in insights:
+            conn.execute(
+                'INSERT INTO insights (company, domain, insight_text, evidence) VALUES (?, ?, ?, ?)',
+                (ins.get('company', ''), ins.get('domain', ''),
+                 ins.get('insight_text', ''), json.dumps(ins.get('evidence', [])))
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def get_insights(company):

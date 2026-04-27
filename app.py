@@ -3,6 +3,7 @@ load_dotenv()  # Must run before any other import so API keys are available
 
 import os
 import threading
+import time
 import uuid
 import functools
 from concurrent.futures import ThreadPoolExecutor
@@ -181,7 +182,8 @@ def _run_analysis_job(job_id: str, company: str, ip: str):
                     _jobs[job_id] = {
                         'status': 'error',
                         'error': f'No job postings found for "{company}".',
-                        'suggestions': suggestions
+                        'suggestions': suggestions,
+                        '_completed_at': time.time(),
                     }
                 return
 
@@ -194,7 +196,8 @@ def _run_analysis_job(job_id: str, company: str, ip: str):
                     _jobs[job_id] = {
                         'status': 'error',
                         'error': 'Could not extract job data. Please try again.',
-                        'suggestions': []
+                        'suggestions': [],
+                        '_completed_at': time.time(),
                     }
                 return
 
@@ -225,6 +228,7 @@ def _run_analysis_job(job_id: str, company: str, ip: str):
         with _jobs_lock:
             _jobs[job_id] = {
                 'status': 'done',
+                '_completed_at': time.time(),
                 'result': {
                     'company': company,
                     'job_count': len(structured_jobs),
@@ -242,7 +246,8 @@ def _run_analysis_job(job_id: str, company: str, ip: str):
             _jobs[job_id] = {
                 'status': 'error',
                 'error': 'An unexpected error occurred. Please try again.',
-                'suggestions': []
+                'suggestions': [],
+                '_completed_at': time.time(),
             }
 
 
@@ -262,7 +267,7 @@ def index():
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    data = request.get_json()
+    data = request.get_json() or {}
     company = (data.get('company') or '').strip()
     force_refresh = data.get('force_refresh', False)
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
@@ -327,7 +332,13 @@ def analyze():
 @app.route('/status/<job_id>')
 def job_status(job_id):
     with _jobs_lock:
-        job = _jobs.get(job_id)
+        raw = _jobs.get(job_id)
+        # Snapshot inside the lock so reads outside are thread-safe
+        job = dict(raw) if raw is not None else None
+        # Lazy cleanup: evict completed entries after 5-minute window
+        if job and job.get('status') in ('done', 'error'):
+            if time.time() - job.get('_completed_at', time.time()) > 300:
+                _jobs.pop(job_id, None)
 
     if not job:
         return jsonify({'status': 'not_found'}), 404
@@ -347,7 +358,7 @@ def job_status(job_id):
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    data = request.get_json()
+    data = request.get_json() or {}
     question = (data.get('question') or '').strip()
     company = (data.get('company') or '').strip() or None
     history = data.get('history') or []
@@ -365,7 +376,7 @@ def chat():
 
 @app.route('/resolve', methods=['POST'])
 def resolve():
-    data = request.get_json()
+    data = request.get_json() or {}
     query = (data.get('query') or '').strip()
     if not query:
         return jsonify({'status': 'unknown'}), 400
