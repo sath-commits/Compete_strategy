@@ -118,6 +118,24 @@ def init_db():
         except Exception:
             pass  # column already exists — safe to ignore
 
+    # Migrate: add latency_ms to searches
+    try:
+        conn.execute("ALTER TABLE searches ADD COLUMN latency_ms INTEGER")
+    except Exception:
+        pass
+
+    # Create shares table for tracking share button clicks
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS shares (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company TEXT,
+            platform TEXT NOT NULL,
+            ip TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_shares_created ON shares(created_at);
+    ''')
+
     # Indexes for frequently-queried columns (safe to re-run via IF NOT EXISTS)
     conn.executescript('''
         CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company COLLATE NOCASE);
@@ -145,11 +163,21 @@ def log_page_view(ip, referrer='', user_agent=''):
     conn.close()
 
 
-def log_search(company, ip='', from_cache=False, success=True, error_type=None):
+def log_search(company, ip='', from_cache=False, success=True, error_type=None, latency_ms=None):
     conn = get_conn()
     conn.execute(
-        'INSERT INTO searches (company, ip, from_cache, success, error_type) VALUES (?, ?, ?, ?, ?)',
-        (company, ip or '', int(from_cache), int(success), error_type)
+        'INSERT INTO searches (company, ip, from_cache, success, error_type, latency_ms) VALUES (?, ?, ?, ?, ?, ?)',
+        (company, ip or '', int(from_cache), int(success), error_type, latency_ms)
+    )
+    conn.commit()
+    conn.close()
+
+
+def log_share(company, platform, ip=''):
+    conn = get_conn()
+    conn.execute(
+        'INSERT INTO shares (company, platform, ip) VALUES (?, ?, ?)',
+        (company or '', platform, ip or '')
     )
     conn.commit()
     conn.close()
@@ -212,7 +240,7 @@ def get_dashboard_data():
 
     # ── Recent searches ─────────────────────────────────────────────────────
     recent = conn.execute('''
-        SELECT company, ip, from_cache, success, error_type, created_at
+        SELECT company, ip, from_cache, success, error_type, latency_ms, created_at
         FROM searches ORDER BY created_at DESC LIMIT 25
     ''').fetchall()
 
@@ -231,6 +259,55 @@ def get_dashboard_data():
         FROM page_views WHERE referrer != '' AND referrer IS NOT NULL
         GROUP BY referrer ORDER BY count DESC LIMIT 8
     ''').fetchall()
+
+    # ── Search frequency distribution (by IP) ───────────────────────────────
+    freq_row = conn.execute('''
+        SELECT
+            SUM(CASE WHEN cnt = 1 THEN 1 ELSE 0 END) as one_time,
+            SUM(CASE WHEN cnt = 2 THEN 1 ELSE 0 END) as two_time,
+            SUM(CASE WHEN cnt >= 3 THEN 1 ELSE 0 END) as power_users
+        FROM (
+            SELECT ip, COUNT(DISTINCT LOWER(company)) as cnt
+            FROM searches WHERE success = 1 AND ip != ''
+            GROUP BY ip
+        )
+    ''').fetchone()
+
+    # ── Returning visitors (visited on 2+ distinct calendar days) ───────────
+    returning_visitors = conn.execute('''
+        SELECT COUNT(*) as n FROM (
+            SELECT ip FROM page_views WHERE ip != ''
+            GROUP BY ip
+            HAVING COUNT(DISTINCT date(created_at)) >= 2
+        )
+    ''').fetchone()['n']
+
+    # ── Activity heatmap (day-of-week × hour-of-day from searches) ──────────
+    heatmap_rows = conn.execute('''
+        SELECT
+            CAST(strftime('%w', created_at, 'localtime') AS INTEGER) as dow,
+            CAST(strftime('%H', created_at, 'localtime') AS INTEGER) as hour,
+            COUNT(*) as count
+        FROM searches WHERE success = 1
+        GROUP BY dow, hour
+    ''').fetchall()
+
+    # ── Share stats ─────────────────────────────────────────────────────────
+    share_rows = conn.execute(
+        'SELECT platform, COUNT(*) as count FROM shares GROUP BY platform'
+    ).fetchall()
+    total_shares = conn.execute('SELECT COUNT(*) as n FROM shares').fetchone()['n']
+
+    # ── Latency stats (fresh successful fetches only) ────────────────────────
+    latency_vals = [
+        r[0] for r in conn.execute(
+            'SELECT latency_ms FROM searches '
+            'WHERE latency_ms IS NOT NULL AND from_cache = 0 AND success = 1 '
+            'ORDER BY latency_ms'
+        ).fetchall()
+    ]
+    avg_ms = int(sum(latency_vals) / len(latency_vals)) if latency_vals else None
+    p95_ms = latency_vals[int(len(latency_vals) * 0.95)] if latency_vals else None
 
     conn.close()
 
@@ -253,6 +330,25 @@ def get_dashboard_data():
             'this_month': api_this_month,
             'remaining': max(0, 200 - api_this_month),
         },
+        'search_frequency': {
+            'one_time': freq_row['one_time'] or 0,
+            'two_time': freq_row['two_time'] or 0,
+            'power_users': freq_row['power_users'] or 0,
+        },
+        'returning_visitors': returning_visitors,
+        'heatmap': [
+            {'dow': r['dow'], 'hour': r['hour'], 'count': r['count']}
+            for r in heatmap_rows
+        ],
+        'shares': {
+            'total': total_shares,
+            'by_platform': {r['platform']: r['count'] for r in share_rows},
+        },
+        'latency': {
+            'avg_ms': avg_ms,
+            'p95_ms': p95_ms,
+            'sample_size': len(latency_vals),
+        },
         'top_companies': [{'company': r['company'], 'count': r['count']} for r in top_companies],
         'top_referrers': [{'referrer': r['referrer'], 'count': r['count']} for r in top_referrers],
         'daily_views': [{'day': r['day'], 'count': r['count']} for r in daily_views],
@@ -264,6 +360,7 @@ def get_dashboard_data():
                 'from_cache': bool(r['from_cache']),
                 'success': bool(r['success']),
                 'error_type': r['error_type'],
+                'latency_ms': r['latency_ms'],
                 'created_at': r['created_at'],
             } for r in recent
         ],

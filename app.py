@@ -21,7 +21,7 @@ from db.db import (
     init_db, save_jobs, save_company_documents,
     get_cached_jobs, get_cache_info,
     log_api_call, get_api_usage,
-    log_page_view, log_search, get_dashboard_data,
+    log_page_view, log_search, log_share, get_dashboard_data,
     get_all_jobs, get_all_company_documents, get_cached_company_documents,
     count_fresh_fetches_today, FRESH_FETCH_DAILY_LIMIT
 )
@@ -169,6 +169,7 @@ def _load_or_fetch_company_docs(company: str, force_refresh: bool = False):
 
 
 def _run_analysis_job(job_id: str, company: str, ip: str):
+    start_time = time.time()
     try:
         with ThreadPoolExecutor(max_workers=2) as prefetch_executor:
             jobs_future = prefetch_executor.submit(fetch_jobs, company)
@@ -223,7 +224,8 @@ def _run_analysis_job(job_id: str, company: str, ip: str):
             insights = f_insights.result()
             trends = f_trends.result()
 
-        log_search(company, ip, from_cache=False, success=True)
+        log_search(company, ip, from_cache=False, success=True,
+                   latency_ms=int((time.time() - start_time) * 1000))
 
         with _jobs_lock:
             _jobs[job_id] = {
@@ -278,8 +280,8 @@ def analyze():
     if not force_refresh:
         structured_jobs = get_cached_jobs(company)
         if structured_jobs:
+            cache_start = time.time()
             print(f"[app] Cache hit for '{company}' — {len(structured_jobs)} jobs")
-            log_search(company, ip, from_cache=True, success=True)
             public_company, company_docs = _load_or_fetch_company_docs(company, force_refresh=False)
             source_status = _make_source_status(company, public_company, company_docs)
             threading.Thread(
@@ -294,6 +296,8 @@ def analyze():
                 f_trends = ex.submit(compute_trends, company, structured_jobs)
                 insights = f_insights.result()
                 trends = f_trends.result()
+            log_search(company, ip, from_cache=True, success=True,
+                       latency_ms=int((time.time() - cache_start) * 1000))
             return jsonify({
                 'company': company,
                 'job_count': len(structured_jobs),
@@ -382,6 +386,17 @@ def resolve():
         return jsonify({'status': 'unknown'}), 400
     result = resolve_company(query)
     return jsonify(result)
+
+
+@app.route('/track/share', methods=['POST'])
+def track_share():
+    data = request.get_json() or {}
+    platform = (data.get('platform') or '').strip()
+    company = (data.get('company') or '').strip()
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    if platform in ('twitter', 'linkedin', 'copy_link'):
+        log_share(company, platform, ip)
+    return '', 204
 
 
 @app.route('/admin')

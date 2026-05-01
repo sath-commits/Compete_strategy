@@ -269,9 +269,67 @@
     }
     .empty-state { color: var(--muted); font-size: 0.8rem; font-style: italic; padding: 8px 0; }
 
+    /* ── Heatmap ── */
+    .heatmap-wrap { overflow-x: auto; }
+    .heatmap-grid {
+      display: grid;
+      grid-template-columns: 36px repeat(24, 1fr);
+      gap: 2px;
+      min-width: 560px;
+    }
+    .heatmap-day-label {
+      font-size: 0.68rem;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      font-weight: 600;
+    }
+    .heatmap-hour-label {
+      font-size: 0.62rem;
+      color: var(--muted);
+      text-align: center;
+      padding-bottom: 3px;
+    }
+    .heatmap-cell {
+      aspect-ratio: 1;
+      border-radius: 2px;
+      background: var(--border);
+      transition: opacity 0.2s;
+    }
+    .heatmap-cell:hover { outline: 1px solid #888; }
+
+    /* ── Frequency bars ── */
+    .freq-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.82rem;
+    }
+    .freq-row:last-child { border-bottom: none; }
+    .freq-label { min-width: 80px; font-weight: 600; }
+    .freq-bar-wrap { flex: 1; }
+    .freq-bar-track { background: var(--bg); border-radius: 4px; height: 6px; overflow: hidden; }
+    .freq-bar-fill { background: var(--black); border-radius: 4px; height: 100%; }
+    .freq-count { font-weight: 700; font-size: 0.8rem; min-width: 28px; text-align: right; }
+
+    /* ── Share platform rows ── */
+    .share-platform-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.82rem;
+    }
+    .share-platform-row:last-child { border-bottom: none; }
+    .share-platform-icon { font-size: 1rem; width: 20px; text-align: center; }
+
     @media (max-width: 900px) {
       .charts-row { grid-template-columns: 1fr; }
       .bottom-row { grid-template-columns: 1fr; }
+      #bottom-grid { grid-template-columns: 1fr !important; }
     }
   </style>
 </head>
@@ -332,6 +390,26 @@
       <div class="stat-value" id="s-failed">—</div>
       <div class="stat-sub">no results or errors</div>
     </div>
+    <div class="stat-card">
+      <div class="stat-label">Share Clicks</div>
+      <div class="stat-value" id="s-shares">—</div>
+      <div class="stat-sub" id="s-shares-sub">X · LinkedIn · Copy link</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Multi-Searchers</div>
+      <div class="stat-value" id="s-multi">—</div>
+      <div class="stat-sub"><span id="s-power">—</span> searched 3+ companies</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Returning Visitors</div>
+      <div class="stat-value" id="s-returning">—</div>
+      <div class="stat-sub">visited on 2+ distinct days</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg Analysis Time</div>
+      <div class="stat-value" id="s-latency">—</div>
+      <div class="stat-sub" id="s-latency-sub">fresh fetches only</div>
+    </div>
   </div>
 
   <!-- ── Activity chart + Top companies ── -->
@@ -348,15 +426,34 @@
     </div>
   </div>
 
-  <!-- ── Recent searches + Referrers ── -->
-  <div class="bottom-row">
-    <div class="panel" style="grid-column: span 2">
+  <!-- ── Heatmap ── -->
+  <div class="panel" style="margin-bottom:28px">
+    <div class="panel-title">Search Activity — Hour of Day × Day of Week</div>
+    <div class="heatmap-wrap">
+      <div class="heatmap-grid" id="heatmap-grid"></div>
+    </div>
+    <div style="margin-top:10px;font-size:0.72rem;color:var(--muted)">
+      Darker = more searches · Local server time · Successful searches only
+    </div>
+  </div>
+
+  <!-- ── Bottom row: recent + referrers + frequency + shares ── -->
+  <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:16px;margin-bottom:28px" id="bottom-grid">
+    <div class="panel">
       <div class="panel-title">Recent Searches</div>
       <div id="recent-list"></div>
     </div>
     <div class="panel">
       <div class="panel-title">Traffic Sources</div>
       <div id="referrers-list"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Search Frequency</div>
+      <div id="frequency-list"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Share Breakdown</div>
+      <div id="shares-list"></div>
     </div>
   </div>
 </div>
@@ -377,6 +474,9 @@ async function loadData() {
     renderTopCompanies(d.top_companies);
     renderRecent(d.recent_searches);
     renderReferrers(d.top_referrers);
+    renderHeatmap(d.heatmap || []);
+    renderFrequency(d.search_frequency || {});
+    renderShares(d.shares || {});
   } catch (e) {
     document.getElementById('last-updated').textContent = 'Failed to load';
   }
@@ -415,6 +515,34 @@ function renderStats(d) {
   const failedEl = document.getElementById('s-failed');
   failedEl.textContent = sr.failed.toLocaleString();
   failedEl.style.color = sr.failed > 0 ? '#ef4444' : '#0A0A0A';
+
+  // Shares
+  const shares = d.shares || {};
+  set('s-shares', (shares.total || 0).toLocaleString());
+  const bp = shares.by_platform || {};
+  set('s-shares-sub',
+    `X:${bp.twitter||0} · LinkedIn:${bp.linkedin||0} · Copy:${bp.copy_link||0}`);
+
+  // Frequency
+  const freq = d.search_frequency || {};
+  const multiSearchers = (freq.two_time || 0) + (freq.power_users || 0);
+  set('s-multi', multiSearchers.toLocaleString());
+  set('s-power', (freq.power_users || 0).toLocaleString());
+
+  // Returning visitors
+  set('s-returning', (d.returning_visitors || 0).toLocaleString());
+
+  // Latency
+  const lat = d.latency || {};
+  if (lat.avg_ms != null) {
+    const secs = (lat.avg_ms / 1000).toFixed(1);
+    set('s-latency', secs + 's');
+    set('s-latency-sub',
+      `p95: ${lat.p95_ms != null ? (lat.p95_ms/1000).toFixed(1)+'s' : '—'} · n=${lat.sample_size||0}`);
+  } else {
+    set('s-latency', '—');
+    set('s-latency-sub', 'no data yet');
+  }
 }
 
 function renderActivityChart(views, searches) {
@@ -511,12 +639,13 @@ function renderRecent(searches) {
     const badgeClass = !s.success ? 'badge-error' : s.from_cache ? 'badge-cache' : 'badge-fresh';
     const badgeLabel = !s.success ? 'failed' : s.from_cache ? 'cached' : 'fresh';
     const time = new Date(s.created_at).toLocaleString();
+    const latencyStr = s.latency_ms != null ? ` · ${(s.latency_ms/1000).toFixed(1)}s` : '';
     return `
       <div class="search-row">
         <div class="search-icon ${iconClass}"><i class="bi ${icon}"></i></div>
         <div style="flex:1;min-width:0">
           <div class="search-company">${esc(s.company)} <span class="badge ${badgeClass}">${badgeLabel}</span></div>
-          <div class="search-meta">${esc(s.ip || '—')} · ${time}</div>
+          <div class="search-meta">${esc(s.ip || '—')} · ${time}${latencyStr}</div>
         </div>
       </div>`;
   }).join('');
@@ -532,6 +661,77 @@ function renderReferrers(refs) {
     <div class="ref-row">
       <span class="ref-url" title="${esc(r.referrer)}">${esc(r.referrer)}</span>
       <span style="font-weight:700;font-size:0.8rem">${r.count}</span>
+    </div>`).join('');
+}
+
+function renderHeatmap(data) {
+  const el = document.getElementById('heatmap-grid');
+  const matrix = Array.from({length: 7}, () => new Array(24).fill(0));
+  let maxVal = 0;
+  for (const d of data) {
+    matrix[d.dow][d.hour] = d.count;
+    if (d.count > maxVal) maxVal = d.count;
+  }
+  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let html = '<div></div>'; // top-left corner
+  for (let h = 0; h < 24; h++) {
+    html += `<div class="heatmap-hour-label">${h % 3 === 0 ? h : ''}</div>`;
+  }
+  for (let dow = 0; dow < 7; dow++) {
+    html += `<div class="heatmap-day-label">${DAYS[dow]}</div>`;
+    for (let h = 0; h < 24; h++) {
+      const val = matrix[dow][h];
+      const intensity = maxVal > 0 ? val / maxVal : 0;
+      const bg = val === 0
+        ? 'var(--border)'
+        : `rgba(197,241,53,${(0.2 + intensity * 0.8).toFixed(2)})`;
+      const border = val === 0 ? '' : `border:1px solid rgba(10,10,10,${(intensity * 0.3).toFixed(2)})`;
+      html += `<div class="heatmap-cell" style="background:${bg};${border}" title="${DAYS[dow]} ${h}:00 — ${val}"></div>`;
+    }
+  }
+  el.innerHTML = html;
+}
+
+function renderFrequency(freq) {
+  const el = document.getElementById('frequency-list');
+  const rows = [
+    { label: 'Once', count: freq.one_time || 0 },
+    { label: '2 companies', count: freq.two_time || 0 },
+    { label: '3+ companies', count: freq.power_users || 0 },
+  ];
+  const max = Math.max(...rows.map(r => r.count), 1);
+  el.innerHTML = rows.map(r => `
+    <div class="freq-row">
+      <span class="freq-label">${r.label}</span>
+      <div class="freq-bar-wrap">
+        <div class="freq-bar-track">
+          <div class="freq-bar-fill" style="width:${Math.round((r.count/max)*100)}%"></div>
+        </div>
+      </div>
+      <span class="freq-count">${r.count}</span>
+    </div>`).join('');
+  if (!freq.one_time && !freq.two_time && !freq.power_users) {
+    el.innerHTML = '<div class="empty-state">No data yet.</div>';
+  }
+}
+
+function renderShares(shares) {
+  const el = document.getElementById('shares-list');
+  const bp = shares.by_platform || {};
+  if (!shares.total) {
+    el.innerHTML = '<div class="empty-state">No share clicks yet.</div>';
+    return;
+  }
+  const platforms = [
+    { key: 'twitter',   label: 'X (Twitter)', icon: 'bi-twitter-x' },
+    { key: 'linkedin',  label: 'LinkedIn',     icon: 'bi-linkedin' },
+    { key: 'copy_link', label: 'Copy link',    icon: 'bi-link-45deg' },
+  ];
+  el.innerHTML = platforms.map(p => `
+    <div class="share-platform-row">
+      <i class="bi ${p.icon} share-platform-icon"></i>
+      <span style="flex:1">${p.label}</span>
+      <span style="font-weight:700">${bp[p.key] || 0}</span>
     </div>`).join('');
 }
 

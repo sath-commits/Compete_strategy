@@ -1128,8 +1128,17 @@ function getShareUrl(company) {
   return window.location.origin + window.location.pathname + '?q=' + encodeURIComponent(company);
 }
 
+function trackShare(platform) {
+  fetch('/track/share', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ platform, company: currentCompany || '' })
+  }).catch(() => {});
+}
+
 function shareTwitter() {
   if (!currentCompany) return;
+  trackShare('twitter');
   const url = getShareUrl(currentCompany);
   const text = `🔍 I analyzed ${currentCompany}'s hiring data and uncovered their product strategy — before they've announced it.\n\nPowered by AI · Read Between The Hires`;
   window.open(
@@ -1140,6 +1149,7 @@ function shareTwitter() {
 
 function shareLinkedIn() {
   if (!currentCompany) return;
+  trackShare('linkedin');
   const url = getShareUrl(currentCompany);
   window.open(
     `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`,
@@ -1149,6 +1159,7 @@ function shareLinkedIn() {
 
 function copyShareLink() {
   if (!currentCompany) return;
+  trackShare('copy_link');
   copyToClipboard(getShareUrl(currentCompany), 'Link copied!');
 }
 
