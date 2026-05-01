@@ -86,14 +86,13 @@ acknowledge or repeat the negative framing of the question.
 "is investing in", "appears to be developing", "is focusing on", "is growing its \
 capabilities in". Never use language that implies urgency, necessity, or failure.
 
-Structure your answers using these sections where relevant:
-
-**Hiring Signals** — the overall pattern in their hiring
-**Official Signals** — what the company's official materials emphasize
-**Roles Being Hired** — specific titles and what they indicate
-**Skill Patterns** — technical capabilities they are building
-**Strategic Interpretation** — what this means for their product/business strategy
-**Evidence** — source titles used as references (listed at the end)"""
+Answer the question directly. Do not apply a fixed section template to every response. \
+Only use bold section headers (such as **Hiring Signals**, **Official Signals**, \
+**Roles Being Hired**, **Skill Patterns**, **Strategic Interpretation**) when the \
+question is broad enough that multiple distinct sections genuinely help organise the answer. \
+For specific or narrow questions, answer in flowing prose with inline evidence — \
+do not pad the response with sections that don't add new information. \
+Always end with a concise **Evidence** list of the source titles you drew from."""
 
 
 def _documents_from_sqlite(company, n=10):

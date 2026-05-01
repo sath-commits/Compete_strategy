@@ -118,11 +118,16 @@ def init_db():
         except Exception:
             pass  # column already exists — safe to ignore
 
-    # Migrate: add latency_ms to searches
-    try:
-        conn.execute("ALTER TABLE searches ADD COLUMN latency_ms INTEGER")
-    except Exception:
-        pass
+    # Migrate: add latency_ms, country, city to searches
+    for col_def in [
+        "ALTER TABLE searches ADD COLUMN latency_ms INTEGER",
+        "ALTER TABLE searches ADD COLUMN country TEXT",
+        "ALTER TABLE searches ADD COLUMN city TEXT",
+    ]:
+        try:
+            conn.execute(col_def)
+        except Exception:
+            pass
 
     # Create shares table for tracking share button clicks
     conn.executescript('''
@@ -163,11 +168,14 @@ def log_page_view(ip, referrer='', user_agent=''):
     conn.close()
 
 
-def log_search(company, ip='', from_cache=False, success=True, error_type=None, latency_ms=None):
+def log_search(company, ip='', from_cache=False, success=True, error_type=None,
+               latency_ms=None, country=None, city=None):
     conn = get_conn()
     conn.execute(
-        'INSERT INTO searches (company, ip, from_cache, success, error_type, latency_ms) VALUES (?, ?, ?, ?, ?, ?)',
-        (company, ip or '', int(from_cache), int(success), error_type, latency_ms)
+        'INSERT INTO searches (company, ip, from_cache, success, error_type, latency_ms, country, city) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        (company, ip or '', int(from_cache), int(success), error_type, latency_ms,
+         country or None, city or None)
     )
     conn.commit()
     conn.close()
@@ -183,68 +191,82 @@ def log_share(company, platform, ip=''):
     conn.close()
 
 
-def get_dashboard_data():
-    """Return all analytics data for the admin dashboard."""
+def get_dashboard_data(period_days=None):
+    """Return all analytics data for the admin dashboard.
+
+    period_days: None = all time; integer = last N days.
+    """
     conn = get_conn()
 
     today = datetime.now().strftime('%Y-%m-%d')
     this_month = datetime.now().strftime('%Y-%m')
 
+    if period_days is not None:
+        since = (datetime.now() - timedelta(days=int(period_days))).strftime('%Y-%m-%d')
+        pf = f" AND date(created_at) >= '{since}'"   # period filter clause
+    else:
+        since = None
+        pf = ""
+
     # ── Page views ──────────────────────────────────────────────────────────
-    total_views = conn.execute('SELECT COUNT(*) as n FROM page_views').fetchone()['n']
+    total_views = conn.execute(
+        f'SELECT COUNT(*) as n FROM page_views WHERE 1=1{pf}'
+    ).fetchone()['n']
     views_today = conn.execute(
         "SELECT COUNT(*) as n FROM page_views WHERE date(created_at) = ?", (today,)
     ).fetchone()['n']
     unique_visitors = conn.execute(
-        'SELECT COUNT(DISTINCT ip) as n FROM page_views'
+        f'SELECT COUNT(DISTINCT ip) as n FROM page_views WHERE 1=1{pf}'
     ).fetchone()['n']
     unique_today = conn.execute(
         "SELECT COUNT(DISTINCT ip) as n FROM page_views WHERE date(created_at) = ?", (today,)
     ).fetchone()['n']
 
     # ── Searches ────────────────────────────────────────────────────────────
-    total_searches = conn.execute('SELECT COUNT(*) as n FROM searches').fetchone()['n']
+    total_searches = conn.execute(
+        f'SELECT COUNT(*) as n FROM searches WHERE 1=1{pf}'
+    ).fetchone()['n']
     searches_today = conn.execute(
         "SELECT COUNT(*) as n FROM searches WHERE date(created_at) = ?", (today,)
     ).fetchone()['n']
     cache_hits = conn.execute(
-        'SELECT COUNT(*) as n FROM searches WHERE from_cache = 1'
+        f'SELECT COUNT(*) as n FROM searches WHERE from_cache = 1{pf}'
     ).fetchone()['n']
     fresh_fetches = conn.execute(
-        'SELECT COUNT(*) as n FROM searches WHERE from_cache = 0 AND success = 1'
+        f'SELECT COUNT(*) as n FROM searches WHERE from_cache = 0 AND success = 1{pf}'
     ).fetchone()['n']
     failed_searches = conn.execute(
-        'SELECT COUNT(*) as n FROM searches WHERE success = 0'
+        f'SELECT COUNT(*) as n FROM searches WHERE success = 0{pf}'
     ).fetchone()['n']
 
     # ── Top companies ───────────────────────────────────────────────────────
-    top_companies = conn.execute('''
+    top_companies = conn.execute(f'''
         SELECT company, COUNT(*) as count
-        FROM searches WHERE success = 1
+        FROM searches WHERE success = 1{pf}
         GROUP BY LOWER(company)
         ORDER BY count DESC LIMIT 10
     ''').fetchall()
 
-    # ── Activity over last 14 days ──────────────────────────────────────────
-    cutoff = (datetime.now() - timedelta(days=13)).strftime('%Y-%m-%d')
+    # ── Activity chart — period or last 14 days ─────────────────────────────
+    chart_cutoff = since if since else (datetime.now() - timedelta(days=13)).strftime('%Y-%m-%d')
     daily_views = conn.execute('''
         SELECT date(created_at) as day, COUNT(*) as count
         FROM page_views WHERE date(created_at) >= ?
         GROUP BY day ORDER BY day
-    ''', (cutoff,)).fetchall()
+    ''', (chart_cutoff,)).fetchall()
     daily_searches = conn.execute('''
         SELECT date(created_at) as day, COUNT(*) as count
         FROM searches WHERE date(created_at) >= ?
         GROUP BY day ORDER BY day
-    ''', (cutoff,)).fetchall()
+    ''', (chart_cutoff,)).fetchall()
 
     # ── Recent searches ─────────────────────────────────────────────────────
-    recent = conn.execute('''
-        SELECT company, ip, from_cache, success, error_type, latency_ms, created_at
-        FROM searches ORDER BY created_at DESC LIMIT 25
+    recent = conn.execute(f'''
+        SELECT company, ip, country, city, from_cache, success, error_type, latency_ms, created_at
+        FROM searches WHERE 1=1{pf} ORDER BY created_at DESC LIMIT 25
     ''').fetchall()
 
-    # ── API usage ───────────────────────────────────────────────────────────
+    # ── API usage (always monthly — not affected by period filter) ──────────
     api_total = conn.execute(
         "SELECT COUNT(*) as n FROM api_usage WHERE service = 'jsearch'"
     ).fetchone()['n']
@@ -254,64 +276,71 @@ def get_dashboard_data():
     ).fetchone()['n']
 
     # ── Referrers ───────────────────────────────────────────────────────────
-    top_referrers = conn.execute('''
+    top_referrers = conn.execute(f'''
         SELECT referrer, COUNT(*) as count
-        FROM page_views WHERE referrer != '' AND referrer IS NOT NULL
+        FROM page_views WHERE referrer != '' AND referrer IS NOT NULL{pf}
         GROUP BY referrer ORDER BY count DESC LIMIT 8
     ''').fetchall()
 
     # ── Search frequency distribution (by IP) ───────────────────────────────
-    freq_row = conn.execute('''
+    freq_row = conn.execute(f'''
         SELECT
             SUM(CASE WHEN cnt = 1 THEN 1 ELSE 0 END) as one_time,
             SUM(CASE WHEN cnt = 2 THEN 1 ELSE 0 END) as two_time,
             SUM(CASE WHEN cnt >= 3 THEN 1 ELSE 0 END) as power_users
         FROM (
             SELECT ip, COUNT(DISTINCT LOWER(company)) as cnt
-            FROM searches WHERE success = 1 AND ip != ''
+            FROM searches WHERE success = 1 AND ip != ''{pf}
             GROUP BY ip
         )
     ''').fetchone()
 
     # ── Returning visitors (visited on 2+ distinct calendar days) ───────────
-    returning_visitors = conn.execute('''
+    returning_visitors = conn.execute(f'''
         SELECT COUNT(*) as n FROM (
-            SELECT ip FROM page_views WHERE ip != ''
+            SELECT ip FROM page_views WHERE ip != ''{pf}
             GROUP BY ip
             HAVING COUNT(DISTINCT date(created_at)) >= 2
         )
     ''').fetchone()['n']
 
     # ── Activity heatmap (day-of-week × hour-of-day from searches) ──────────
-    heatmap_rows = conn.execute('''
+    heatmap_rows = conn.execute(f'''
         SELECT
             CAST(strftime('%w', created_at, 'localtime') AS INTEGER) as dow,
             CAST(strftime('%H', created_at, 'localtime') AS INTEGER) as hour,
             COUNT(*) as count
-        FROM searches WHERE success = 1
+        FROM searches WHERE success = 1{pf}
         GROUP BY dow, hour
     ''').fetchall()
 
     # ── Share stats ─────────────────────────────────────────────────────────
     share_rows = conn.execute(
-        'SELECT platform, COUNT(*) as count FROM shares GROUP BY platform'
+        f'SELECT platform, COUNT(*) as count FROM shares WHERE 1=1{pf} GROUP BY platform'
     ).fetchall()
-    total_shares = conn.execute('SELECT COUNT(*) as n FROM shares').fetchone()['n']
+    total_shares = conn.execute(
+        f'SELECT COUNT(*) as n FROM shares WHERE 1=1{pf}'
+    ).fetchone()['n']
 
     # ── Latency stats (fresh successful fetches only) ────────────────────────
     latency_vals = [
         r[0] for r in conn.execute(
-            'SELECT latency_ms FROM searches '
-            'WHERE latency_ms IS NOT NULL AND from_cache = 0 AND success = 1 '
-            'ORDER BY latency_ms'
+            f'SELECT latency_ms FROM searches '
+            f'WHERE latency_ms IS NOT NULL AND from_cache = 0 AND success = 1{pf} '
+            f'ORDER BY latency_ms'
         ).fetchall()
     ]
     avg_ms = int(sum(latency_vals) / len(latency_vals)) if latency_vals else None
     p95_ms = latency_vals[int(len(latency_vals) * 0.95)] if latency_vals else None
 
+    # ── Cost estimate ────────────────────────────────────────────────────────
+    # OpenAI: ~$0.05 per fresh analysis, ~$0.01 per cache hit (insights only)
+    openai_est = round(fresh_fetches * 0.05 + cache_hits * 0.01, 2)
+
     conn.close()
 
     return {
+        'period_days': period_days,
         'page_views': {
             'total': total_views,
             'today': views_today,
@@ -329,6 +358,11 @@ def get_dashboard_data():
             'total': api_total,
             'this_month': api_this_month,
             'remaining': max(0, 200 - api_this_month),
+        },
+        'cost_estimate': {
+            'openai_usd': openai_est,
+            'jsearch_usd': 0,
+            'total_usd': openai_est,
         },
         'search_frequency': {
             'one_time': freq_row['one_time'] or 0,
@@ -357,6 +391,8 @@ def get_dashboard_data():
             {
                 'company': r['company'],
                 'ip': r['ip'],
+                'country': r['country'],
+                'city': r['city'],
                 'from_cache': bool(r['from_cache']),
                 'success': bool(r['success']),
                 'error_type': r['error_type'],

@@ -31,6 +31,35 @@ app = Flask(__name__)
 
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'changeme')
 
+# ── IP Geolocation ─────────────────────────────────────────────────────────────
+
+import ipaddress
+import requests as _requests
+from functools import lru_cache
+
+@lru_cache(maxsize=2000)
+def _geolocate_ip(ip: str):
+    """Return (country, city) for a public IP. Returns (None, None) for private/local IPs."""
+    if not ip:
+        return None, None
+    try:
+        if ipaddress.ip_address(ip).is_private:
+            return None, None
+    except ValueError:
+        return None, None
+    try:
+        r = _requests.get(
+            f'http://ip-api.com/json/{ip}',
+            params={'fields': 'status,country,city'},
+            timeout=2
+        )
+        data = r.json()
+        if data.get('status') == 'success':
+            return data.get('country') or None, data.get('city') or None
+    except Exception:
+        pass
+    return None, None
+
 # Hard cap on JSearch calls per month (200 free/month). Default 190 leaves a safety buffer.
 # Each company search = 1 API call regardless of num_pages. Override with JSEARCH_LIMIT env var.
 JSEARCH_MONTHLY_LIMIT = int(os.getenv('JSEARCH_LIMIT', '190'))
@@ -224,8 +253,10 @@ def _run_analysis_job(job_id: str, company: str, ip: str):
             insights = f_insights.result()
             trends = f_trends.result()
 
+        geo_country, geo_city = _geolocate_ip(ip)
         log_search(company, ip, from_cache=False, success=True,
-                   latency_ms=int((time.time() - start_time) * 1000))
+                   latency_ms=int((time.time() - start_time) * 1000),
+                   country=geo_country, city=geo_city)
 
         with _jobs_lock:
             _jobs[job_id] = {
@@ -296,8 +327,10 @@ def analyze():
                 f_trends = ex.submit(compute_trends, company, structured_jobs)
                 insights = f_insights.result()
                 trends = f_trends.result()
+            geo_country, geo_city = _geolocate_ip(ip)
             log_search(company, ip, from_cache=True, success=True,
-                       latency_ms=int((time.time() - cache_start) * 1000))
+                       latency_ms=int((time.time() - cache_start) * 1000),
+                       country=geo_country, city=geo_city)
             return jsonify({
                 'company': company,
                 'job_count': len(structured_jobs),
@@ -408,7 +441,11 @@ def admin():
 @app.route('/admin/data')
 @_require_admin
 def admin_data():
-    return jsonify(get_dashboard_data())
+    try:
+        period = int(request.args.get('period', 0)) or None
+    except (ValueError, TypeError):
+        period = None
+    return jsonify(get_dashboard_data(period_days=period))
 
 
 if __name__ == '__main__':

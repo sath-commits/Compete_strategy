@@ -342,6 +342,14 @@
   </a>
   <div class="nav-right">
     <span class="last-updated" id="last-updated">Loading…</span>
+    <select id="period-select" onchange="loadData()" style="
+      background:#1a1a1a;color:#ccc;border:1px solid #333;border-radius:6px;
+      padding:4px 10px;font-size:0.78rem;font-family:'Inter',sans-serif;cursor:pointer;">
+      <option value="1">Today</option>
+      <option value="7">Last 7 days</option>
+      <option value="30" selected>Last 30 days</option>
+      <option value="0">All time</option>
+    </select>
     <button class="refresh-btn" onclick="loadData()">
       <i class="bi bi-arrow-clockwise"></i> Refresh
     </button>
@@ -426,6 +434,18 @@
     </div>
   </div>
 
+  <!-- ── API Usage & Cost ── -->
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:28px" id="api-cost-grid">
+    <div class="panel">
+      <div class="panel-title">API Usage</div>
+      <div id="api-usage-detail"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Estimated Cost (period)</div>
+      <div id="cost-detail"></div>
+    </div>
+  </div>
+
   <!-- ── Heatmap ── -->
   <div class="panel" style="margin-bottom:28px">
     <div class="panel-title">Search Activity — Hour of Day × Day of Week</div>
@@ -461,9 +481,14 @@
 <script>
 let activityChart = null;
 
+function getPeriod() {
+  return parseInt(document.getElementById('period-select').value, 10) || 0;
+}
+
 async function loadData() {
   try {
-    const resp = await fetch('/admin/data');
+    const period = getPeriod();
+    const resp = await fetch('/admin/data' + (period ? `?period=${period}` : ''));
     const d = await resp.json();
 
     document.getElementById('last-updated').textContent =
@@ -477,6 +502,7 @@ async function loadData() {
     renderHeatmap(d.heatmap || []);
     renderFrequency(d.search_frequency || {});
     renderShares(d.shares || {});
+    renderApiCosts(d);
   } catch (e) {
     document.getElementById('last-updated').textContent = 'Failed to load';
   }
@@ -640,12 +666,13 @@ function renderRecent(searches) {
     const badgeLabel = !s.success ? 'failed' : s.from_cache ? 'cached' : 'fresh';
     const time = new Date(s.created_at).toLocaleString();
     const latencyStr = s.latency_ms != null ? ` · ${(s.latency_ms/1000).toFixed(1)}s` : '';
+    const geo = [s.city, s.country].filter(Boolean).join(', ') || null;
     return `
       <div class="search-row">
         <div class="search-icon ${iconClass}"><i class="bi ${icon}"></i></div>
         <div style="flex:1;min-width:0">
           <div class="search-company">${esc(s.company)} <span class="badge ${badgeClass}">${badgeLabel}</span></div>
-          <div class="search-meta">${esc(s.ip || '—')} · ${time}${latencyStr}</div>
+          <div class="search-meta">${esc(s.ip || '—')}${geo ? ' · ' + esc(geo) : ''} · ${time}${latencyStr}</div>
         </div>
       </div>`;
   }).join('');
@@ -733,6 +760,53 @@ function renderShares(shares) {
       <span style="flex:1">${p.label}</span>
       <span style="font-weight:700">${bp[p.key] || 0}</span>
     </div>`).join('');
+}
+
+function renderApiCosts(d) {
+  const api = d.api || {};
+  const sr  = d.searches || {};
+  const cost = d.cost_estimate || {};
+  const pct = Math.min(100, Math.round((api.this_month / 200) * 100));
+  const meterColor = pct > 75 ? '#ef4444' : pct > 40 ? '#f59e0b' : '#C5F135';
+
+  document.getElementById('api-usage-detail').innerHTML = `
+    <div class="freq-row">
+      <span class="freq-label" style="min-width:160px">JSearch (job data)</span>
+      <div class="freq-bar-wrap">
+        <div class="freq-bar-track">
+          <div class="freq-bar-fill" style="width:${pct}%;background:${meterColor}"></div>
+        </div>
+        <div style="font-size:0.68rem;color:var(--muted);margin-top:2px">${api.this_month}/200 this month · ${api.remaining} remaining</div>
+      </div>
+    </div>
+    <div class="freq-row">
+      <span class="freq-label" style="min-width:160px">OpenAI (GPT-4o-mini)</span>
+      <div style="font-size:0.8rem;color:var(--muted);flex:1">
+        ~${sr.fresh_fetches||0} fresh × 75 extraction calls + insight calls<br>
+        ~${sr.cache_hits||0} cache hits × insight calls only
+      </div>
+    </div>
+    <div class="freq-row">
+      <span class="freq-label" style="min-width:160px">OpenAI (embeddings)</span>
+      <div style="font-size:0.8rem;color:var(--muted);flex:1">text-embedding-3-small · ~$0.001/search</div>
+    </div>
+    <div class="freq-row" style="border-bottom:none">
+      <span class="freq-label" style="min-width:160px">arXiv / PatentsView / SEC</span>
+      <div style="font-size:0.8rem;color:var(--muted);flex:1">Free, no limits</div>
+    </div>`;
+
+  const total = cost.total_usd || 0;
+  document.getElementById('cost-detail').innerHTML = `
+    <div style="font-size:2rem;font-weight:800;margin-bottom:4px">$${total.toFixed(2)}</div>
+    <div style="font-size:0.75rem;color:var(--muted);margin-bottom:16px">estimated OpenAI spend · JSearch $0 (free tier)</div>
+    <div style="font-size:0.75rem;color:var(--muted);line-height:1.6">
+      ~$0.05 / fresh analysis<br>
+      ~$0.01 / cached analysis<br>
+      Based on ${sr.fresh_fetches||0} fresh + ${sr.cache_hits||0} cached searches
+    </div>
+    <div style="margin-top:12px;font-size:0.68rem;color:var(--muted);font-style:italic">
+      Estimate only — actual cost varies by job count and domain coverage.
+    </div>`;
 }
 
 function set(id, val) { document.getElementById(id).textContent = val; }
