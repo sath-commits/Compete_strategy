@@ -934,10 +934,22 @@ def _fetch_arxiv_documents(company: str, max_results: int = MAX_ARXIV_DOCS) -> l
             id_text = entry.findtext("atom:id", "", ns) or ""
             paper_url = id_text.replace("http://arxiv.org/abs/", "https://arxiv.org/abs/")
 
-        authors = [
-            a.findtext("atom:name", "", ns)
-            for a in entry.findall("atom:author", ns)
-        ]
+        # Verify at least one author's affiliation actually contains the company name.
+        # Without this, arXiv returns papers about physical "stripes", "apple" varieties,
+        # "amazon" river, etc. — keyword matches in title/abstract, not the company.
+        authors = []
+        has_company_affiliation = False
+        company_lower = company.lower()
+        for author_el in entry.findall("atom:author", ns):
+            name = author_el.findtext("atom:name", "", ns) or ""
+            affil = author_el.findtext("arxiv:affiliation", "", ns) or ""
+            authors.append(name)
+            if company_lower in affil.lower():
+                has_company_affiliation = True
+
+        if not has_company_affiliation:
+            continue
+
         categories = [
             t.get("term", "")
             for t in entry.findall("atom:category", ns)
@@ -1062,6 +1074,58 @@ def _fetch_patent_documents(company: str, max_docs: int = MAX_PATENT_DOCS) -> li
     return docs
 
 
+# ── Relevance gate ─────────────────────────────────────────────────────────────
+# Sources fetched by ticker/CIK or from pre-configured company-owned URLs are
+# inherently company-specific — no relevance check needed.
+# Sources fetched by keyword (arXiv, patents, Form D) can match unrelated entities
+# that share a common word (e.g. "stripe" patterns in physics, "apple" varieties,
+# "meta" in metamaterials). We check those against the company name.
+_TRUSTED_SOURCE_TYPES = frozenset({
+    "earnings_call_transcript", "quarterly_filing", "earnings_release",
+    "shareholder_letter", "investor_day",   # ticker-locked via SEC/FMP
+    "newsroom_post", "changelog", "product_doc",  # domain-locked via company profile
+    "customer_story", "partner_page", "pricing_page",
+    "github_release",                       # org-locked via company profile
+})
+
+
+def _company_name_variants(company: str) -> list:
+    """
+    Return lowercased name variants to match against document content.
+    Strips common corporate suffixes so "Stripe, Inc." and "Stripe" both
+    produce the same canonical token.
+    """
+    base = company.lower().strip()
+    variants = {base}
+    stripped = re.sub(
+        r'[,\s]+(inc\.?|ltd\.?|llc\.?|corp\.?|corporation|group|holdings|'
+        r'technologies|technology|solutions|services|platforms?|labs?|co\.?)$',
+        '', base
+    ).strip(' ,')
+    if stripped and stripped != base:
+        variants.add(stripped)
+    return list(variants)
+
+
+def _is_relevant_to_company(doc: dict, company: str) -> bool:
+    """
+    Returns True if the document is plausibly about the given company.
+    Trusted source types (ticker/domain-locked) pass through unconditionally.
+    For open-ended keyword-sourced types, at least one company name variant
+    must appear in the title, first 1000 chars of raw text, or source URL.
+    """
+    if doc.get("source_type") in _TRUSTED_SOURCE_TYPES:
+        return True
+
+    variants = _company_name_variants(company)
+    haystack = " ".join(filter(None, [
+        (doc.get("title") or "").lower(),
+        (doc.get("raw_text") or "")[:1000].lower(),
+        (doc.get("source_url") or "").lower(),
+    ]))
+    return any(v in haystack for v in variants)
+
+
 def fetch_company_documents(company: str, public_company: Optional[dict] = None) -> list:
     public_company = public_company or {}
     profile = get_company_profile(company, public_company)
@@ -1112,6 +1176,13 @@ def fetch_company_documents(company: str, public_company: Optional[dict] = None)
             continue
         seen.add(key)
         normalized.append(doc)
+
+    # Relevance gate — drop documents not actually about this company
+    before_filter = len(normalized)
+    normalized = [doc for doc in normalized if _is_relevant_to_company(doc, company)]
+    dropped = before_filter - len(normalized)
+    if dropped:
+        print(f"[company_documents] Relevance filter dropped {dropped}/{before_filter} off-topic documents for '{company}'")
 
     normalized.sort(key=_source_sort_key, reverse=True)
     normalized = normalized[:MAX_TOTAL_DOCS]
