@@ -42,6 +42,8 @@ def _geolocate_ip(ip: str):
     """Return (country, city) for a public IP. Returns (None, None) for private/local IPs."""
     if not ip:
         return None, None
+    # X-Forwarded-For may be a comma-separated list; take the first (real client IP)
+    ip = ip.split(',')[0].strip()
     try:
         if ipaddress.ip_address(ip).is_private:
             return None, None
