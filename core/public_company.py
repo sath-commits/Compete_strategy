@@ -13,7 +13,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SEC_USER_AGENT = os.getenv(
     "SEC_USER_AGENT",
-    "compete-strategy/1.0 support@example.com"
+    "read-between-the-hires/1.0 support@example.com"
 )
 
 # Only true rebrands where the brand name is completely absent from the SEC filing name.

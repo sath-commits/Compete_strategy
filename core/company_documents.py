@@ -22,7 +22,7 @@ DOC_SUMMARY_MODEL = os.getenv("DOC_SUMMARY_MODEL", "gpt-4o-mini")
 
 SEC_USER_AGENT = os.getenv(
     "SEC_USER_AGENT",
-    "compete-strategy/1.0 support@example.com"
+    "read-between-the-hires/1.0 support@example.com"
 )
 FMP_API_KEY = os.getenv("FMP_API_KEY", "").strip()
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
