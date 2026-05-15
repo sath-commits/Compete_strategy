@@ -21,7 +21,7 @@ def fetch_jobs(company, num_pages=NUM_PAGES):
         "x-rapidapi-key": RAPIDAPI_KEY,
     }
     params = {
-        "query": company,
+        "query": f"{company} jobs",
         "page": "1",
         "num_pages": str(num_pages),
         "date_posted": "all",
