@@ -25,7 +25,7 @@ from db.db import (
     get_all_jobs, get_all_company_documents, get_cached_company_documents,
     count_fresh_fetches_today, FRESH_FETCH_DAILY_LIMIT
 )
-from core.company_resolver import resolve_company, get_search_suggestions
+from core.company_resolver import resolve_company
 
 app = Flask(__name__)
 
@@ -205,21 +205,22 @@ def _run_analysis_job(job_id: str, company: str, ip: str):
         with ThreadPoolExecutor(max_workers=2) as prefetch_executor:
             jobs_future = prefetch_executor.submit(fetch_jobs, company)
             docs_future = prefetch_executor.submit(_load_or_fetch_company_docs, company, True)
-            raw_jobs = jobs_future.result()
+            raw_jobs, jsearch_called = jobs_future.result()
+
+            # Log the JSearch call regardless of outcome — it consumed quota either way
+            if jsearch_called:
+                log_api_call('jsearch', company=company, call_type='search')
 
             if not raw_jobs:
-                suggestions = get_search_suggestions(company)
                 log_search(company, ip, from_cache=False, success=False, error_type='no_results')
                 with _jobs_lock:
                     _jobs[job_id] = {
                         'status': 'error',
                         'error': f'No job postings found for "{company}".',
-                        'suggestions': suggestions,
+                        'suggestions': [],
                         '_completed_at': time.time(),
                     }
                 return
-
-            log_api_call('jsearch', company=company, call_type='search')
 
             structured_jobs = extract_and_classify_jobs(raw_jobs, company)
             if not structured_jobs:

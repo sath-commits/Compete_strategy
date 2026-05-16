@@ -263,7 +263,7 @@ def get_dashboard_data(period_days=None):
     # ── Recent searches ─────────────────────────────────────────────────────
     recent = conn.execute(f'''
         SELECT company, ip, country, city, from_cache, success, error_type, latency_ms, created_at
-        FROM searches WHERE 1=1{pf} ORDER BY created_at DESC LIMIT 25
+        FROM searches WHERE 1=1{pf} ORDER BY created_at DESC LIMIT 200
     ''').fetchall()
 
     # ── API usage (always monthly — not affected by period filter) ──────────

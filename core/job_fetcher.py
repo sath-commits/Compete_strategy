@@ -14,14 +14,19 @@ NUM_PAGES = 10
 
 
 def fetch_jobs(company, num_pages=NUM_PAGES):
-    results = _fetch_from_jsearch(company, num_pages)
-    if not results:
-        print(f"[job_fetcher] JSearch empty for '{company}', trying Adzuna")
-        results = _fetch_from_adzuna(company)
-    return results
+    """Returns (jobs, jsearch_was_called). jsearch_was_called tells the caller to log the API use."""
+    jsearch_called, results = _fetch_from_jsearch(company, num_pages)
+    if results:
+        return results, jsearch_called
+    print(f"[job_fetcher] JSearch empty for '{company}', trying Adzuna")
+    adzuna_results = _fetch_from_adzuna(company)
+    return adzuna_results, jsearch_called
 
 
-def _fetch_from_jsearch(company: str, num_pages: int) -> list:
+def _fetch_from_jsearch(company: str, num_pages: int):
+    """Returns (called: bool, jobs: list). called=True means an HTTP request was made."""
+    if not RAPIDAPI_KEY:
+        return False, []
     url = f"https://{RAPIDAPI_HOST}/search"
     headers = {
         "x-rapidapi-host": RAPIDAPI_HOST,
@@ -39,11 +44,11 @@ def _fetch_from_jsearch(company: str, num_pages: int) -> list:
         raw_jobs = response.json().get("data", [])
     except Exception as e:
         print(f"[job_fetcher] JSearch error for '{company}': {e}")
-        return []
+        return True, []
 
     validated = _filter_by_company(raw_jobs, company)
     print(f"[job_fetcher] JSearch company='{company}' → {len(raw_jobs)} raw, {len(validated)} after filter")
-    return _normalize(validated)
+    return True, _normalize(validated)
 
 
 def _fetch_from_adzuna(company: str) -> list:
