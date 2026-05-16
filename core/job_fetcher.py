@@ -55,9 +55,8 @@ def _fetch_from_adzuna(company: str) -> list:
     params = {
         "app_id": ADZUNA_APP_ID,
         "app_key": ADZUNA_APP_KEY,
-        "what": company,
+        "what_phrase": company,
         "results_per_page": 50,
-        "content-type": "application/json",
     }
     try:
         response = requests.get(url, params=params, timeout=30)

@@ -27,6 +27,13 @@ KNOWN_ALIASES = {
     'uber':             'Uber',
     'airbnb':           'Airbnb',
     'stripe':           'Stripe',
+    'visa':             'Visa',
+    'visa inc':         'Visa',
+    'mastercard':       'Mastercard',
+    'master card':      'Mastercard',
+    'amex':             'American Express',
+    'american express': 'American Express',
+    'paypal':           'PayPal',
     'salesforce':       'Salesforce',
     'sales force':      'Salesforce',
     'sales-force':      'Salesforce',
@@ -138,37 +145,7 @@ Return only valid JSON."""
 
 
 def get_search_suggestions(company: str) -> list:
-    """
-    When a search returns no results, return simpler name variants to try.
-    No AI call needed — we just apply simple rules:
-    1. Try each individual word (e.g. "DBS Bank" → ["DBS", "Bank"])
-    2. Try without common suffixes (Inc, Ltd, Corp, Group, Bank, Technologies…)
-    This covers 90% of cases instantly and for free.
-    """
-    words = company.strip().split()
-    suggestions = []
-
-    # Rule 1: if multi-word, suggest the first word alone (usually the brand name)
-    if len(words) > 1:
-        suggestions.append(words[0])
-
-    # Rule 2: strip common corporate suffixes and suggest the remainder
-    suffixes = {'inc', 'ltd', 'llc', 'corp', 'corporation', 'group',
-                'bank', 'technologies', 'technology', 'solutions',
-                'services', 'holdings', 'co', 'company', 'ai', 'labs'}
-    filtered = [w for w in words if w.lower() not in suffixes]
-    if filtered and ' '.join(filtered).lower() != company.lower() and filtered != [words[0]]:
-        suggestions.append(' '.join(filtered))
-
-    # Deduplicate while preserving order
-    seen = set()
-    result = []
-    for s in suggestions:
-        if s.lower() not in seen and s.lower() != company.lower():
-            seen.add(s.lower())
-            result.append(s)
-
-    return result[:3]
+    return []
 
 
 def resolve_company(query: str) -> dict:
